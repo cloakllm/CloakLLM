@@ -39,7 +39,7 @@ npm install cloakllm
 ```
 
 ```javascript
-import { cloakllm } from 'cloakllm';
+const cloakllm = require('cloakllm');
 
 cloakllm.enable(openaiClient);  // Wraps OpenAI SDK
 ```
