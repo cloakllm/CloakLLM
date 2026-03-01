@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/social-card.png" alt="CloakLLM — Cloak your prompts. Prove your compliance." width="720" />
+</p>
+
 # CloakLLM
 
 **Cloak your prompts. Prove your compliance.**
