@@ -9,7 +9,11 @@
 Open-source PII protection middleware for LLMs. Detect sensitive data, replace it with reversible tokens, and maintain tamper-evident audit logs — all before your prompts leave your infrastructure.
 
 <p align="center">
-  <img src="assets/demo.gif" alt="CloakLLM 30-second demo" width="720" />
+  <a href="https://asciinema.org/a/odNEs0kWP51YRGtl" target="_blank">
+    <img src="assets/demo.gif" alt="CloakLLM 30-second demo" width="720" />
+  </a>
+  <br>
+  <sub>▶ <a href="https://asciinema.org/a/odNEs0kWP51YRGtl">Watch interactive demo on asciinema</a></sub>
 </p>
 
 ## SDKs
