@@ -21,6 +21,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
   - [JavaScript ShieldConfig](#javascript-shieldconfig)
   - [Environment Variables](#environment-variables)
 - [Multi-Turn Conversations](#multi-turn-conversations)
+- [Redaction Mode](#redaction-mode)
 - [Custom Patterns](#custom-patterns)
 - [LLM-Powered Detection (Ollama)](#llm-powered-detection-ollama)
 - [Entity Detection Reference](#entity-detection-reference)
@@ -416,6 +417,7 @@ Every sanitize/desanitize operation is logged to hash-chained JSONL files:
 | `otel_enabled` | `bool` | `False` | `CLOAKLLM_OTEL_ENABLED` | Enable OpenTelemetry |
 | `otel_service_name` | `str` | `"cloakllm"` | `OTEL_SERVICE_NAME` | OTel service name |
 | `auto_mode` | `bool` | `True` | — | Auto-sanitize in middleware |
+| `mode` | `str` | `"tokenize"` | — | `"tokenize"` (reversible) or `"redact"` (irreversible) |
 | `skip_models` | `list[str]` | `[]` | — | Model prefixes to skip |
 
 ### JavaScript ShieldConfig
@@ -440,6 +442,7 @@ Every sanitize/desanitize operation is logged to hash-chained JSONL files:
 | `logDir` | `string` | `"./cloakllm_audit"` | `CLOAKLLM_LOG_DIR` | Audit log directory |
 | `logOriginalValues` | `boolean` | `false` | — | Log original PII values (not recommended) |
 | `autoMode` | `boolean` | `true` | — | Auto-sanitize in middleware |
+| `mode` | `string` | `"tokenize"` | — | `"tokenize"` (reversible) or `"redact"` (irreversible) |
 | `skipModels` | `string[]` | `[]` | — | Model prefixes to skip |
 
 ### Environment Variables
@@ -506,6 +509,55 @@ const [sanitized2] = shield.sanitize(
 // Desanitize any response using the same tokenMap
 const restored = shield.desanitize(llmResponse, tokenMap);
 ```
+
+---
+
+## Redaction Mode
+
+Redaction mode provides **irreversible** PII removal — entities are replaced with `[CATEGORY_REDACTED]` placeholders instead of numbered tokens. No token map is stored, so the original values cannot be recovered. This is designed for GDPR right-to-erasure and scenarios where you must guarantee PII is permanently destroyed.
+
+### Python
+
+```python
+from cloakllm import Shield, ShieldConfig
+
+shield = Shield(ShieldConfig(mode="redact"))
+
+redacted, token_map = shield.sanitize("Email john@acme.com about Sarah Johnson")
+# redacted: "Email [EMAIL_REDACTED] about [PERSON_REDACTED]"
+# token_map.entity_count == 2, but no mappings stored
+
+# Desanitize is a no-op in redact mode — original values are gone
+restored = shield.desanitize(redacted, token_map)
+# restored == redacted (unchanged)
+```
+
+### JavaScript
+
+```javascript
+const { Shield, ShieldConfig } = require('cloakllm');
+
+const shield = new Shield(new ShieldConfig({ mode: 'redact' }));
+
+const [redacted, tokenMap] = shield.sanitize('Email john@acme.com about Sarah Johnson');
+// redacted: "Email [EMAIL_REDACTED] about [PERSON_REDACTED]"
+// tokenMap.entityCount == 2, but no mappings stored
+
+// Desanitize is a no-op in redact mode
+const restored = shield.desanitize(redacted, tokenMap);
+// restored === redacted (unchanged)
+```
+
+### MCP
+
+Pass `mode: "redact"` to the `sanitize` tool. No `token_map_id` is returned in redact mode.
+
+### Key Behaviors
+
+- Token format: `[CATEGORY_REDACTED]` (e.g., `[EMAIL_REDACTED]`, `[PERSON_REDACTED]`)
+- Token map is empty — no bidirectional mappings stored
+- `desanitize()` returns the input unchanged (no-op)
+- Audit log entries include `"mode": "redact"` for traceability
 
 ---
 

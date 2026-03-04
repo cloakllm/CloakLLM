@@ -20,15 +20,16 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 
 | SDK | Version | Install | Docs |
 |-----|---------|---------|------|
-| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.1.5 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
-| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.1.5 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
-| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.1.5 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
+| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.1.6 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
+| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.1.6 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
+| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.1.6 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
 
 ## What it does
 
 - **PII Detection** — emails, SSNs, credit cards, phone numbers, API keys, and more
 - **LLM-Powered Detection** — opt-in local Ollama integration catches context-dependent PII that regex misses (addresses, medical terms)
 - **Reversible Tokenization** — deterministic `[CATEGORY_N]` tokens that preserve context for the LLM
+- **Redaction Mode** — irreversible `[CATEGORY_REDACTED]` replacement for GDPR right-to-erasure
 - **Tamper-Evident Audit Logs** — hash-chained entries for EU AI Act Article 12 compliance
 - **Middleware Integration** — drop-in support for LiteLLM and OpenAI SDK (Python) and OpenAI/Vercel AI SDK (JS)
 - **MCP Server** — use CloakLLM directly from Claude Desktop, Cursor, or any MCP-compatible client
