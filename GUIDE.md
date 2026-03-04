@@ -369,7 +369,6 @@ Every sanitize/desanitize operation is logged to hash-chained JSONL files:
 | `llm_timeout` | `float` | `10.0` | — | LLM request timeout (seconds) |
 | `llm_confidence` | `float` | `0.85` | — | Confidence threshold for LLM detections |
 | `descriptive_tokens` | `bool` | `True` | — | `[PERSON_0]` vs `[TKN_A3F2]` |
-| `preserve_format` | `bool` | `False` | — | Preserve format in replacement |
 | `audit_enabled` | `bool` | `True` | — | Enable audit logging |
 | `log_dir` | `Path` | `./cloakllm_audit` | `CLOAKLLM_LOG_DIR` | Audit log directory |
 | `log_original_values` | `bool` | `False` | — | Log original PII values (not recommended) |
