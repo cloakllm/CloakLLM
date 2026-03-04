@@ -30,7 +30,7 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 - **LLM-Powered Detection** — opt-in local Ollama integration catches context-dependent PII that regex misses (addresses, medical terms)
 - **Reversible Tokenization** — deterministic `[CATEGORY_N]` tokens that preserve context for the LLM
 - **Tamper-Evident Audit Logs** — hash-chained entries for EU AI Act Article 12 compliance
-- **Middleware Integration** — drop-in support for LiteLLM (Python) and OpenAI/Vercel AI SDK (JS)
+- **Middleware Integration** — drop-in support for LiteLLM and OpenAI SDK (Python) and OpenAI/Vercel AI SDK (JS)
 - **MCP Server** — use CloakLLM directly from Claude Desktop, Cursor, or any MCP-compatible client
 
 ## Quick Start
@@ -42,8 +42,15 @@ pip install cloakllm
 ```
 
 ```python
-import cloakllm
+# Option A: OpenAI SDK
+from cloakllm import enable_openai
+from openai import OpenAI
 
+client = OpenAI()
+enable_openai(client)  # Wraps OpenAI SDK — all calls are now protected
+
+# Option B: LiteLLM
+import cloakllm
 cloakllm.enable()  # Wraps LiteLLM — all calls are now protected
 ```
 

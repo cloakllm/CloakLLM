@@ -8,6 +8,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+  - [Python — OpenAI SDK](#python--openai-sdk)
   - [Python — LiteLLM](#python--litellm)
   - [Python — Standalone Shield](#python--standalone-shield)
   - [JavaScript — OpenAI SDK](#javascript--openai-sdk)
@@ -65,6 +66,46 @@ Depends on `cloakllm` (the Python SDK).
 ---
 
 ## Quick Start
+
+### Python — OpenAI SDK
+
+One line to wrap your OpenAI client:
+
+```python
+from cloakllm import enable_openai, ShieldConfig
+from openai import OpenAI
+
+client = OpenAI()
+enable_openai(
+    client,
+    config=ShieldConfig(
+        skip_models=["ollama/"],
+        log_dir="./audit_logs",
+    ),
+)
+
+# Use OpenAI normally — CloakLLM works transparently
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {
+            "role": "user",
+            "content": (
+                "Help me write a follow-up email to Sarah Johnson "
+                "(sarah.j@techcorp.io) about the Q3 security audit. "
+                "Her direct line is +1-555-0142."
+            ),
+        }
+    ],
+)
+
+# Response is automatically desanitized — original names/emails restored
+print(response.choices[0].message.content)
+
+# Disable when done
+from cloakllm import disable_openai
+disable_openai(client)
+```
 
 ### Python — LiteLLM
 
@@ -731,6 +772,19 @@ The hash chain makes tampering evident. Each entry's `entry_hash` is computed fr
 ---
 
 ## Disabling / Re-enabling
+
+### Python (OpenAI SDK)
+
+```python
+from cloakllm import enable_openai, disable_openai
+from openai import OpenAI
+
+client = OpenAI()
+
+enable_openai(client)   # Start protecting
+disable_openai(client)  # Stop — restore original client behavior
+enable_openai(client)   # Re-enable at any time
+```
 
 ### Python (LiteLLM)
 
