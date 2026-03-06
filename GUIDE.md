@@ -178,6 +178,14 @@ restored = shield.desanitize(llm_response, token_map)
 # Analyze without modifying
 analysis = shield.analyze("Call me at +972-50-123-4567 or email sarah@example.org")
 # → { "entity_count": 2, "entities": [...] }
+
+# Per-entity metadata (no original text — PII-safe)
+token_map.entity_details
+# [{"category": "PERSON", "start": 0, "end": 10, ...}, ...]
+
+# Full report for dashboards
+token_map.to_report()
+# {"entity_count": 5, "categories": {...}, "tokens": [...], "mode": "tokenize", "entity_details": [...]}
 ```
 
 ### JavaScript — OpenAI SDK
@@ -322,7 +330,11 @@ The MCP server exposes 3 tools:
   "sanitized": "Email [EMAIL_0] about the meeting with [PERSON_0]",
   "token_map_id": "a1b2c3d4-...",
   "entity_count": 2,
-  "categories": { "EMAIL": 1, "PERSON": 1 }
+  "categories": { "EMAIL": 1, "PERSON": 1 },
+  "entity_details": [
+    { "category": "EMAIL", "start": 6, "end": 19, "length": 13, "confidence": 0.95, "source": "regex", "token": "[EMAIL_0]" },
+    { "category": "PERSON", "start": 42, "end": 56, "length": 14, "confidence": 0.85, "source": "spacy", "token": "[PERSON_0]" }
+  ]
 }
 ```
 
@@ -377,6 +389,8 @@ Detected entities are replaced with deterministic tokens in `[CATEGORY_N]` forma
 Tokens are **deterministic** — the same input produces the same token within a session. A `TokenMap` stores the bidirectional mapping and can be reused across multi-turn conversations.
 
 Token injection is prevented by escaping fullwidth brackets in user input.
+
+The `TokenMap` also exposes `entity_details` (Python) / `entityDetails` (JS) — per-entity metadata (category, offsets, confidence, source, token) without original text. Use `to_report()` / `toReport()` for a full summary suitable for compliance dashboards.
 
 ### Audit Logs
 
@@ -776,6 +790,7 @@ Each line is a JSON object with these key fields:
 | `tokens_used` | List of tokens used (no original values) |
 | `latency_ms` | Processing time in milliseconds |
 | `metadata` | Additional context (e.g., `user_id`, `session_id`) |
+| `entity_details` | Per-entity metadata array (PII-safe: category, offsets, confidence, source, token) |
 | `prev_hash` | SHA-256 hash of the previous entry |
 | `entry_hash` | SHA-256 hash of this entry |
 
