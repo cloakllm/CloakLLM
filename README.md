@@ -2,6 +2,12 @@
   <img src="assets/social-card.png" alt="CloakLLM — Cloak your prompts. Prove your compliance." width="720" />
 </p>
 
+<p align="center">
+  <a href="https://pypi.org/project/cloakllm/"><img src="https://img.shields.io/pypi/dw/cloakllm" alt="PyPI Downloads"></a>
+  <a href="https://pypi.org/project/cloakllm-mcp/"><img src="https://img.shields.io/pypi/dw/cloakllm-mcp" alt="PyPI Downloads (MCP)"></a>
+  <a href="https://www.npmjs.com/package/cloakllm"><img src="https://img.shields.io/npm/dw/cloakllm" alt="npm Downloads"></a>
+</p>
+
 # CloakLLM
 
 **Cloak your prompts. Prove your compliance.**
