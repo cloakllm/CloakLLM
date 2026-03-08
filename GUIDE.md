@@ -699,7 +699,7 @@ shield = Shield(ShieldConfig(mode="redact"))
 
 redacted, token_map = shield.sanitize("Email john@acme.com about Sarah Johnson")
 # redacted: "Email [EMAIL_REDACTED] about [PERSON_REDACTED]"
-# token_map.entity_count == 2, but no mappings stored
+# token_map.entity_count == 0 (no forward mappings in redact mode)
 
 # Desanitize is a no-op in redact mode — original values are gone
 restored = shield.desanitize(redacted, token_map)
@@ -715,7 +715,7 @@ const shield = new Shield(new ShieldConfig({ mode: 'redact' }));
 
 const [redacted, tokenMap] = shield.sanitize('Email john@acme.com about Sarah Johnson');
 // redacted: "Email [EMAIL_REDACTED] about [PERSON_REDACTED]"
-// tokenMap.entityCount == 2, but no mappings stored
+// tokenMap.entityCount == 0 (no forward mappings in redact mode)
 
 // Desanitize is a no-op in redact mode
 const restored = shield.desanitize(redacted, tokenMap);
