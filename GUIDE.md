@@ -21,6 +21,8 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
   - [JavaScript ShieldConfig](#javascript-shieldconfig)
   - [Environment Variables](#environment-variables)
 - [Multi-Turn Conversations](#multi-turn-conversations)
+- [Batch Processing](#batch-processing)
+- [Performance Metrics](#performance-metrics)
 - [Redaction Mode](#redaction-mode)
 - [Custom Patterns](#custom-patterns)
 - [LLM-Powered Detection (Ollama)](#llm-powered-detection-ollama)
@@ -317,7 +319,7 @@ Or using `uvx`:
 }
 ```
 
-The MCP server exposes 3 tools:
+The MCP server exposes 4 tools:
 
 **`sanitize`** — Detect and cloak PII, returns sanitized text + token map ID.
 
@@ -346,6 +348,21 @@ The MCP server exposes 3 tools:
 
 // Response
 { "restored": "I've drafted an email to john@acme.com regarding Sarah Johnson's request." }
+```
+
+**`sanitize_batch`** — Sanitize multiple texts with a shared token map.
+
+```json
+// Tool call
+{ "texts": ["Email john@acme.com", "SSN 123-45-6789"] }
+
+// Response
+{
+  "sanitized": ["Email [EMAIL_0]", "SSN [SSN_0]"],
+  "token_map_id": "a1b2c3d4-...",
+  "entity_count": 2,
+  "categories": { "EMAIL": 1, "SSN": 1 }
+}
 ```
 
 **`analyze`** — Detect PII without cloaking.
@@ -522,6 +539,149 @@ const [sanitized2] = shield.sanitize(
 
 // Desanitize any response using the same tokenMap
 const restored = shield.desanitize(llmResponse, tokenMap);
+```
+
+---
+
+## Batch Processing
+
+Sanitize multiple texts at once with a shared token map and a single audit entry. Same entities across texts get the same token.
+
+### Python
+
+```python
+from cloakllm import Shield
+
+shield = Shield()
+
+texts = [
+    "Email john@acme.com about the project",
+    "Also notify jane@acme.com and john@acme.com",
+]
+sanitized_texts, token_map = shield.sanitize_batch(texts)
+# sanitized_texts[0]: "Email [EMAIL_0] about the project"
+# sanitized_texts[1]: "Also notify [EMAIL_1] and [EMAIL_0]"
+# john@acme.com → [EMAIL_0] in both texts (shared token map)
+
+# Desanitize batch
+responses = ["Reply to [EMAIL_0]", "CC [EMAIL_1]"]
+restored = shield.desanitize_batch(responses, token_map)
+```
+
+### JavaScript
+
+```javascript
+const { Shield } = require('cloakllm');
+
+const shield = new Shield();
+
+const [sanitizedTexts, tokenMap] = shield.sanitizeBatch([
+  'Email john@acme.com about the project',
+  'Also notify jane@acme.com and john@acme.com',
+]);
+
+// Desanitize batch
+const restored = shield.desanitizeBatch(
+  ['Reply to [EMAIL_0]', 'CC [EMAIL_1]'],
+  tokenMap
+);
+```
+
+### MCP
+
+Use the `sanitize_batch` tool:
+
+```json
+// Tool call
+{ "texts": ["Email john@acme.com", "SSN 123-45-6789"] }
+
+// Response
+{
+  "sanitized": ["Email [EMAIL_0]", "SSN [SSN_0]"],
+  "token_map_id": "a1b2c3d4-...",
+  "entity_count": 2,
+  "categories": { "EMAIL": 1, "SSN": 1 }
+}
+```
+
+### Key Behaviors
+
+- **Shared token map**: Same entity in different texts gets the same token
+- **Single audit entry**: One `sanitize_batch` event instead of N separate `sanitize` events
+- **Per-text entity tracking**: Each entity detail includes a `text_index` field indicating which text it came from
+- **Reusable token map**: Pass `token_map` / `tokenMap` from a previous call for multi-turn batch conversations
+
+---
+
+## Performance Metrics
+
+Track detection performance with per-pass timing breakdowns in audit logs and accumulated metrics via the `metrics()` API.
+
+### Per-Pass Timing in Audit Logs
+
+Every audit entry includes a `timing` object with per-pass breakdowns:
+
+```json
+{
+  "timing": {
+    "total_ms": 12.5,
+    "detection_ms": 8.2,
+    "regex_ms": 1.1,
+    "ner_ms": 6.8,
+    "llm_ms": 0.0,
+    "tokenization_ms": 4.3
+  }
+}
+```
+
+### Accumulated Metrics API
+
+Use `metrics()` to get accumulated performance stats across all calls, and `reset_metrics()` / `resetMetrics()` to clear them.
+
+### Python
+
+```python
+from cloakllm import Shield
+
+shield = Shield()
+
+# ... perform sanitize/desanitize calls ...
+
+stats = shield.metrics()
+# {
+#   "calls": { "sanitize": 5, "desanitize": 3, "sanitize_batch": 1, "desanitize_batch": 0 },
+#   "total_ms": 62.4,
+#   "avg_ms": 6.9,
+#   "detection": { "regex_ms": 5.5, "ner_ms": 34.0, "llm_ms": 0.0 },
+#   "tokenization_ms": 22.9,
+#   "entities_detected": 18,
+#   "categories": { "EMAIL": 7, "PERSON": 5, "SSN": 3, "PHONE": 3 }
+# }
+
+shield.reset_metrics()  # Clear accumulated stats
+```
+
+### JavaScript
+
+```javascript
+const { Shield } = require('cloakllm');
+
+const shield = new Shield();
+
+// ... perform sanitize/desanitize calls ...
+
+const stats = shield.metrics();
+// {
+//   calls: { sanitize: 5, desanitize: 3, sanitizeBatch: 1, desanitizeBatch: 0 },
+//   total_ms: 45.2,
+//   avg_ms: 5.0,
+//   detection: { regex_ms: 5.5, llm_ms: 0.0 },
+//   tokenization_ms: 39.7,
+//   entities_detected: 18,
+//   categories: { EMAIL: 7, SSN: 3, PHONE: 3 }
+// }
+
+shield.resetMetrics();  // Clear accumulated stats
 ```
 
 ---
@@ -780,7 +940,7 @@ Each line is a JSON object with these key fields:
 | `event_id` | Unique event ID (UUID4) |
 | `seq` | Sequence number within the file |
 | `timestamp` | ISO 8601 timestamp |
-| `event_type` | `"sanitize"`, `"desanitize"`, `"shield_enabled"`, or `"shield_disabled"` |
+| `event_type` | `"sanitize"`, `"desanitize"`, `"sanitize_batch"`, `"desanitize_batch"`, `"shield_enabled"`, or `"shield_disabled"` |
 | `entity_count` | Number of entities detected |
 | `categories` | Map of category → count |
 | `prompt_hash` | SHA-256 hash of the original text |
@@ -790,7 +950,9 @@ Each line is a JSON object with these key fields:
 | `tokens_used` | List of tokens used (no original values) |
 | `latency_ms` | Processing time in milliseconds |
 | `metadata` | Additional context (e.g., `user_id`, `session_id`) |
+| `mode` | `"tokenize"` or `"redact"` |
 | `entity_details` | Per-entity metadata array (PII-safe: category, offsets, confidence, source, token) |
+| `timing` | Per-pass breakdown: `total_ms`, `detection_ms`, `regex_ms`, `ner_ms`, `llm_ms`, `tokenization_ms` |
 | `prev_hash` | SHA-256 hash of the previous entry |
 | `entry_hash` | SHA-256 hash of this entry |
 
