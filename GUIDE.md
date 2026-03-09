@@ -26,6 +26,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Redaction Mode](#redaction-mode)
 - [Custom Patterns](#custom-patterns)
 - [LLM-Powered Detection (Ollama)](#llm-powered-detection-ollama)
+- [Custom LLM Categories](#custom-llm-categories)
 - [Entity Detection Reference](#entity-detection-reference)
 - [CLI](#cli)
 - [Audit Logs](#audit-logs)
@@ -441,6 +442,7 @@ Every sanitize/desanitize operation is logged to hash-chained JSONL files:
 | `llm_ollama_url` | `str` | `"http://localhost:11434"` | `CLOAKLLM_OLLAMA_URL` | Ollama server URL |
 | `llm_timeout` | `float` | `10.0` | — | LLM request timeout (seconds) |
 | `llm_confidence` | `float` | `0.85` | — | Confidence threshold for LLM detections |
+| `custom_llm_categories` | `list[tuple[str, str]]` | `[]` | — | Custom `(name, description)` categories for LLM detection |
 | `descriptive_tokens` | `bool` | `True` | — | `[PERSON_0]` vs `[TKN_A3F2]` |
 | `audit_enabled` | `bool` | `True` | — | Enable audit logging |
 | `log_dir` | `Path` | `./cloakllm_audit` | `CLOAKLLM_LOG_DIR` | Audit log directory |
@@ -468,6 +470,7 @@ Every sanitize/desanitize operation is logged to hash-chained JSONL files:
 | `llmOllamaUrl` | `string` | `"http://localhost:11434"` | `CLOAKLLM_OLLAMA_URL` | Ollama server URL |
 | `llmTimeout` | `number` | `10000` | — | LLM request timeout (ms) |
 | `llmConfidence` | `number` | `0.85` | — | Confidence threshold for LLM detections |
+| `customLlmCategories` | `Array<{name, description?}>` | `[]` | — | Custom categories for LLM detection |
 | `descriptiveTokens` | `boolean` | `true` | — | `[PERSON_0]` vs opaque tokens |
 | `auditEnabled` | `boolean` | `true` | — | Enable audit logging |
 | `logDir` | `string` | `"./cloakllm_audit"` | `CLOAKLLM_LOG_DIR` | Audit log directory |
@@ -826,6 +829,69 @@ If Ollama is not running, the LLM pass is silently skipped.
 
 ---
 
+## Custom LLM Categories
+
+Define domain-specific PII types that the Ollama LLM pass should detect. This extends the built-in LLM categories (ADDRESS, MEDICAL, etc.) with your own semantic types.
+
+### Python
+
+```python
+from cloakllm import Shield, ShieldConfig
+
+config = ShieldConfig(
+    llm_detection=True,
+    custom_llm_categories=[
+        ("PATIENT_ID", "Hospital patient ID, format PAT-XXXXX"),
+        ("EMPLOYEE_NUMBER", "Internal employee number"),
+    ],
+)
+shield = Shield(config=config)
+
+sanitized, token_map = shield.sanitize("Patient PAT-12345 was seen by Dr. Smith")
+# If LLM detects "PAT-12345" as PATIENT_ID → "[PATIENT_ID_0]"
+```
+
+### JavaScript
+
+```javascript
+const { Shield, ShieldConfig } = require('cloakllm');
+
+const config = new ShieldConfig({
+  llmDetection: true,
+  customLlmCategories: [
+    { name: 'PATIENT_ID', description: 'Hospital patient ID, format PAT-XXXXX' },
+    { name: 'EMPLOYEE_NUMBER', description: 'Internal employee number' },
+  ],
+});
+const shield = new Shield(config);
+
+const [sanitized, tokenMap] = shield.sanitize('Patient PAT-12345 was seen by Dr. Smith');
+// If LLM detects "PAT-12345" as PATIENT_ID → "[PATIENT_ID_0]"
+```
+
+### MCP
+
+Pass `custom_llm_categories` as a JSON string of `[name, description]` pairs:
+
+```json
+// Tool call
+{
+  "text": "Patient PAT-12345 was seen by Dr. Smith",
+  "custom_llm_categories": "[[\"PATIENT_ID\", \"Hospital patient ID\"]]"
+}
+```
+
+### Key Behaviors
+
+| Behavior | Details |
+|----------|---------|
+| **Name validation** | Must match `^[A-Z][A-Z0-9_]*$` (Python enforces at config time) |
+| **Excluded categories** | Categories handled by regex/NER (EMAIL, PHONE, SSN, etc.) are skipped with a warning |
+| **Description hints** | Descriptions are injected into the Ollama system prompt to guide detection |
+| **Requires LLM detection** | `llm_detection` / `llmDetection` must be enabled for custom categories to take effect |
+
+---
+
 ## Entity Detection Reference
 
 | Category | Examples | Detection Method |
@@ -852,6 +918,7 @@ If Ollama is not running, the LLM pass is silently skipped.
 | `USERNAME` | @johndoe42 | Ollama LLM |
 | `PASSWORD` | P@ssw0rd123 | Ollama LLM |
 | `VEHICLE` | plate ABC-1234 | Ollama LLM |
+| Custom LLM | *(your categories)* | Ollama LLM (via `custom_llm_categories`) |
 
 ---
 
