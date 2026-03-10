@@ -96,7 +96,7 @@ This exposes three tools to Claude: **sanitize**, **desanitize**, and **analyze*
 
 ## Roadmap
 
-See [PLAN.md](PLAN.md) for the design discussion on upcoming features: detection benchmarks, per-entity HMAC hashing, Ed25519 cryptographic attestation, and normalized token standard.
+Upcoming: detection benchmarks, Ed25519 cryptographic attestation, and normalized token standard.
 
 ## License
 
