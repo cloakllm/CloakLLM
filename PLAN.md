@@ -23,7 +23,7 @@ CloakLLM v0.2.0 provides deterministic PII detection, tokenization, hash-chained
 | Differential privacy | **Missing** | No epsilon/delta, no noise injection |
 | Cryptographic attestation | **Missing** | No signatures, no pre-signed proofs |
 | Normalized/canonical tokens | **Partial** | Format is consistent but not a formal standard |
-| One-way PII hashing | **Partial** | Audit logs hash original text, but no keyed/salted per-entity hashes |
+| One-way PII hashing | **Done** | HMAC-SHA256 per entity via `entity_hashing` config, `entity_hash` in entity_details |
 
 ## Gap Analysis & Proposed Architecture
 
@@ -115,14 +115,15 @@ The endgame -- "public workloads" -- means the verifier is a **programmatic syst
 - Output: a published accuracy report per release
 - Realistic target: 99.99% for regex categories, 95-98% for NER, 90-95% for LLM semantic
 
-#### Phase 2: Per-Entity One-Way Hashing (v0.3.1)
-**Why second:** Quick win, high value. Enables linkability without exposing originals.
+#### Phase 2: Per-Entity One-Way Hashing (v0.2.1) ✅ COMPLETED
+**Shipped in v0.2.1 (2026-03-10).**
 
 - `HMAC-SHA256(deployment_key, category + ":" + normalized_value)` per entity
-- Add `entity_hash` field to `entity_details` in TokenMap and audit logs
+- `entity_hash` field in `entity_details` in TokenMap and audit logs
 - Keyed hash prevents rainbow table attacks; category prefix prevents cross-type collisions
-- Enables: "same person appeared in 47 requests" without knowing who
-- Config: `ShieldConfig(entity_hashing=True, hash_key="...")`
+- Config: `ShieldConfig(entity_hashing=True, entity_hash_key="...")`
+- Auto-generates random 32-byte hex key if none provided
+- Implemented across Python, JS, and MCP SDKs
 
 #### Phase 3: Cryptographic Attestation (v0.3.2)
 **Why third:** The differentiator for public workloads. Needs Phase 1 + 2 as foundation.

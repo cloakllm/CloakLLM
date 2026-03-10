@@ -27,6 +27,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Custom Patterns](#custom-patterns)
 - [LLM-Powered Detection (Ollama)](#llm-powered-detection-ollama)
 - [Custom LLM Categories](#custom-llm-categories)
+- [Entity Hashing](#entity-hashing)
 - [Entity Detection Reference](#entity-detection-reference)
 - [CLI](#cli)
 - [Audit Logs](#audit-logs)
@@ -443,6 +444,8 @@ Every sanitize/desanitize operation is logged to hash-chained JSONL files:
 | `llm_timeout` | `float` | `10.0` | — | LLM request timeout (seconds) |
 | `llm_confidence` | `float` | `0.85` | — | Confidence threshold for LLM detections |
 | `custom_llm_categories` | `list[tuple[str, str]]` | `[]` | — | Custom `(name, description)` categories for LLM detection |
+| `entity_hashing` | `bool` | `False` | `CLOAKLLM_ENTITY_HASHING` | Enable per-entity HMAC-SHA256 hashing |
+| `entity_hash_key` | `str` | `None` | `CLOAKLLM_ENTITY_HASH_KEY` | HMAC key (auto-generated if omitted) |
 | `descriptive_tokens` | `bool` | `True` | — | `[PERSON_0]` vs `[TKN_A3F2]` |
 | `audit_enabled` | `bool` | `True` | — | Enable audit logging |
 | `log_dir` | `Path` | `./cloakllm_audit` | `CLOAKLLM_LOG_DIR` | Audit log directory |
@@ -471,6 +474,8 @@ Every sanitize/desanitize operation is logged to hash-chained JSONL files:
 | `llmTimeout` | `number` | `10000` | — | LLM request timeout (ms) |
 | `llmConfidence` | `number` | `0.85` | — | Confidence threshold for LLM detections |
 | `customLlmCategories` | `Array<{name, description?}>` | `[]` | — | Custom categories for LLM detection |
+| `entityHashing` | `boolean` | `false` | `CLOAKLLM_ENTITY_HASHING` | Enable per-entity HMAC-SHA256 hashing |
+| `entityHashKey` | `string` | `undefined` | `CLOAKLLM_ENTITY_HASH_KEY` | HMAC key (auto-generated if omitted) |
 | `descriptiveTokens` | `boolean` | `true` | — | `[PERSON_0]` vs opaque tokens |
 | `auditEnabled` | `boolean` | `true` | — | Enable audit logging |
 | `logDir` | `string` | `"./cloakllm_audit"` | `CLOAKLLM_LOG_DIR` | Audit log directory |
@@ -490,6 +495,8 @@ These work across all three SDKs:
 | `CLOAKLLM_LLM_MODEL` | `llama3.2` | Ollama model for LLM detection |
 | `CLOAKLLM_OLLAMA_URL` | `http://localhost:11434` | Ollama server URL |
 | `CLOAKLLM_SPACY_MODEL` | `en_core_web_sm` | spaCy model (Python only) |
+| `CLOAKLLM_ENTITY_HASHING` | `false` | Enable per-entity HMAC-SHA256 hashing |
+| `CLOAKLLM_ENTITY_HASH_KEY` | *(auto-generated)* | HMAC key for entity hashing |
 | `CLOAKLLM_AUDIT_ENABLED` | `true` | Enable/disable audit logging (MCP) |
 | `CLOAKLLM_OTEL_ENABLED` | `false` | Enable OpenTelemetry (Python only) |
 | `OTEL_SERVICE_NAME` | `cloakllm` | OpenTelemetry service name (Python only) |
@@ -892,6 +899,82 @@ Pass `custom_llm_categories` as a JSON string of `[name, description]` pairs:
 
 ---
 
+## Entity Hashing
+
+Per-entity HMAC-SHA256 hashing enables cross-request entity correlation without storing PII. Each detected entity gets a deterministic, keyed hash — the same entity always produces the same hash, allowing you to track "the same person appeared in 47 requests" without knowing who.
+
+### Python
+
+```python
+from cloakllm import Shield, ShieldConfig
+
+config = ShieldConfig(
+    entity_hashing=True,
+    entity_hash_key="my-secret-key-hex",  # optional — auto-generated if omitted
+)
+shield = Shield(config=config)
+
+sanitized, token_map = shield.sanitize("Email john@acme.com about Sarah Johnson")
+
+# entity_details now includes entity_hash
+for detail in token_map.entity_details:
+    print(detail["category"], detail["token"], detail["entity_hash"])
+    # EMAIL  [EMAIL_0]  a3f2...  (64-char hex)
+    # PERSON [PERSON_0] b7c1...
+```
+
+### JavaScript
+
+```javascript
+const { Shield, ShieldConfig } = require('cloakllm');
+
+const config = new ShieldConfig({
+  entityHashing: true,
+  entityHashKey: 'my-secret-key-hex',  // optional — auto-generated if omitted
+});
+const shield = new Shield(config);
+
+const [sanitized, tokenMap] = shield.sanitize('Email john@acme.com about Sarah Johnson');
+
+// entityDetails now includes entity_hash
+for (const detail of tokenMap.entityDetails) {
+  console.log(detail.category, detail.token, detail.entity_hash);
+}
+```
+
+### MCP
+
+Pass `entity_hashing` and optionally `entity_hash_key` to the `sanitize` tool:
+
+```json
+// Tool call
+{ "text": "Email john@acme.com", "entity_hashing": true, "entity_hash_key": "my-key" }
+
+// Response — entity_details includes entity_hash
+{
+  "entity_details": [
+    { "category": "EMAIL", "token": "[EMAIL_0]", "entity_hash": "a3f2..." }
+  ]
+}
+```
+
+### How It Works
+
+- **HMAC-SHA256**: `HMAC(key, "CATEGORY:normalized_text")` — keyed hash prevents rainbow table attacks
+- **Category prefix**: `EMAIL:john@acme.com` and `PERSON:john@acme.com` produce different hashes, preventing cross-type collisions
+- **Normalization**: Input is lowercased and stripped of whitespace for consistency (`John Smith` and `john smith` produce the same hash)
+- **Auto-key**: If `entity_hashing=True` but no key is provided, a random 32-byte hex key is generated per Shield instance
+- **Deterministic**: Same entity + same key = same hash, across requests and SDK languages
+- **Works everywhere**: Compatible with `tokenize` mode, `redact` mode, `sanitize_batch`, and multi-turn conversations
+
+### Security Notes
+
+- The HMAC key is a deployment secret — never share it or log it
+- Entity hashes are one-way — you cannot recover the original PII from a hash
+- Use a consistent key across requests to enable correlation; rotate the key to break correlation
+
+---
+
 ## Entity Detection Reference
 
 | Category | Examples | Detection Method |
@@ -1018,7 +1101,7 @@ Each line is a JSON object with these key fields:
 | `latency_ms` | Processing time in milliseconds |
 | `metadata` | Additional context (e.g., `user_id`, `session_id`) |
 | `mode` | `"tokenize"` or `"redact"` |
-| `entity_details` | Per-entity metadata array (PII-safe: category, offsets, confidence, source, token) |
+| `entity_details` | Per-entity metadata array (PII-safe: category, offsets, confidence, source, token, and `entity_hash` when hashing is enabled) |
 | `timing` | Per-pass breakdown: `total_ms`, `detection_ms`, `regex_ms`, `ner_ms`, `llm_ms`, `tokenization_ms` |
 | `prev_hash` | SHA-256 hash of the previous entry |
 | `entry_hash` | SHA-256 hash of this entry |
