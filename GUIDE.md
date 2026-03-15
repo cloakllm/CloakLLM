@@ -321,7 +321,7 @@ Or using `uvx`:
 }
 ```
 
-The MCP server exposes 4 tools:
+The MCP server exposes 6 tools:
 
 **`sanitize`** — Detect and cloak PII, returns sanitized text + token map ID.
 
@@ -342,16 +342,6 @@ The MCP server exposes 4 tools:
 }
 ```
 
-**`desanitize`** — Restore original values using a token map ID.
-
-```json
-// Tool call
-{ "text": "I've drafted an email to [EMAIL_0] regarding [PERSON_0]'s request.", "token_map_id": "a1b2c3d4-..." }
-
-// Response
-{ "restored": "I've drafted an email to john@acme.com regarding Sarah Johnson's request." }
-```
-
 **`sanitize_batch`** — Sanitize multiple texts with a shared token map.
 
 ```json
@@ -367,6 +357,26 @@ The MCP server exposes 4 tools:
 }
 ```
 
+**`desanitize`** — Restore original values using a token map ID.
+
+```json
+// Tool call
+{ "text": "I've drafted an email to [EMAIL_0] regarding [PERSON_0]'s request.", "token_map_id": "a1b2c3d4-..." }
+
+// Response
+{ "restored": "I've drafted an email to john@acme.com regarding Sarah Johnson's request." }
+```
+
+**`desanitize_batch`** — Restore original values in multiple texts using a shared token map.
+
+```json
+// Tool call
+{ "texts": ["Reply to [EMAIL_0]", "SSN is [SSN_0]"], "token_map_id": "a1b2c3d4-..." }
+
+// Response
+{ "restored": ["Reply to john@acme.com", "SSN is 123-45-6789"] }
+```
+
 **`analyze`** — Detect PII without cloaking.
 
 ```json
@@ -380,6 +390,22 @@ The MCP server exposes 4 tools:
     { "text": "john@acme.com", "category": "EMAIL", "start": 8, "end": 21, "confidence": 0.95, "source": "regex" },
     { "text": "123-45-6789", "category": "SSN", "start": 27, "end": 38, "confidence": 0.95, "source": "regex" }
   ]
+}
+```
+
+**`analyze_batch`** — Analyze multiple texts for PII without cloaking.
+
+```json
+// Tool call
+{ "texts": ["Email john@acme.com", "SSN 123-45-6789"] }
+
+// Response
+{
+  "results": [
+    { "entity_count": 1, "entities": [{ "text": "john@acme.com", "category": "EMAIL", ... }] },
+    { "entity_count": 1, "entities": [{ "text": "123-45-6789", "category": "SSN", ... }] }
+  ],
+  "total_entity_count": 2
 }
 ```
 
