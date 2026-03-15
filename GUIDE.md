@@ -28,6 +28,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [LLM-Powered Detection (Ollama)](#llm-powered-detection-ollama)
 - [Custom LLM Categories](#custom-llm-categories)
 - [Entity Hashing](#entity-hashing)
+- [Incremental Streaming](#incremental-streaming)
 - [Entity Detection Reference](#entity-detection-reference)
 - [CLI](#cli)
 - [Audit Logs](#audit-logs)
@@ -998,6 +999,77 @@ Pass `entity_hashing` and optionally `entity_hash_key` to the `sanitize` tool:
 - The HMAC key is a deployment secret — never share it or log it
 - Entity hashes are one-way — you cannot recover the original PII from a hash
 - Use a consistent key across requests to enable correlation; rotate the key to break correlation
+
+---
+
+## Incremental Streaming
+
+When using streaming LLM responses, CloakLLM desanitizes tokens incrementally as chunks arrive — no buffering of the full response. The `StreamDesanitizer` state machine replaces `[CATEGORY_N]` tokens as soon as the closing `]` arrives, passing plain text through immediately.
+
+All middleware integrations (OpenAI SDK, LiteLLM, Vercel AI SDK) use `StreamDesanitizer` automatically. You only need the standalone API if you're building a custom streaming pipeline.
+
+### Python
+
+```python
+from cloakllm import Shield, StreamDesanitizer
+
+shield = Shield()
+sanitized, token_map = shield.sanitize("Email john@acme.com about Sarah Johnson")
+
+# Simulate streaming chunks from an LLM
+chunks = ["Hi ", "[PER", "SON_0]", ", your email is ", "[EMAIL_0]", "."]
+
+desan = StreamDesanitizer(token_map)
+for chunk in chunks:
+    output = desan.feed(chunk)
+    if output:
+        print(output, end="")  # prints incrementally
+# Flush any remaining buffer at end of stream
+remaining = desan.flush()
+if remaining:
+    print(remaining, end="")
+```
+
+### JavaScript
+
+```javascript
+const { Shield, StreamDesanitizer } = require('cloakllm');
+
+const shield = new Shield();
+const [sanitized, tokenMap] = shield.sanitize('Email john@acme.com about Sarah Johnson');
+
+// Simulate streaming chunks from an LLM
+const chunks = ['Hi ', '[PER', 'SON_0]', ', your email is ', '[EMAIL_0]', '.'];
+
+const desan = new StreamDesanitizer(tokenMap);
+for (const chunk of chunks) {
+  const output = desan.feed(chunk);
+  if (output) process.stdout.write(output);
+}
+const remaining = desan.flush();
+if (remaining) process.stdout.write(remaining);
+```
+
+### How It Works
+
+- **Plain text** passes through `feed()` immediately — no latency added
+- **`[` bracket** triggers internal buffering of a potential token
+- **`]` bracket** resolves the buffer against the token map (case-insensitive) and emits the original value, or the literal text if not a known token
+- **Buffer overflow** — if the buffer exceeds 40 characters without a `]`, it flushes incrementally to prevent unbounded memory use
+- **`flush()`** — call at end-of-stream to emit any remaining buffered text
+
+### Middleware Integration
+
+All middleware paths use `StreamDesanitizer` internally:
+
+| Middleware | Streaming Support |
+|-----------|------------------|
+| Python OpenAI SDK (`enable_openai`) | Incremental desanitization |
+| Python LiteLLM (`cloakllm.enable`) | Incremental desanitization |
+| JS OpenAI SDK (`enable`) | Incremental desanitization |
+| JS Vercel AI SDK (`createCloakLLMMiddleware`) | Incremental desanitization |
+
+No configuration needed — streaming desanitization is automatic when `stream: true` / `stream=True` is used.
 
 ---
 
