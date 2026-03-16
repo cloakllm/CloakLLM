@@ -29,6 +29,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Custom LLM Categories](#custom-llm-categories)
 - [Entity Hashing](#entity-hashing)
 - [Incremental Streaming](#incremental-streaming)
+- [Cryptographic Attestation](#cryptographic-attestation)
 - [Entity Detection Reference](#entity-detection-reference)
 - [CLI](#cli)
 - [Audit Logs](#audit-logs)
@@ -1070,6 +1071,98 @@ All middleware paths use `StreamDesanitizer` internally:
 | JS Vercel AI SDK (`createCloakLLMMiddleware`) | Incremental desanitization |
 
 No configuration needed — streaming desanitization is automatic when `stream: true` / `stream=True` is used.
+
+---
+
+## Cryptographic Attestation
+
+Ed25519 digital signatures prove that sanitization occurred. Each `sanitize()` call produces a signed certificate containing input/output hashes, entity count, categories, and detection passes. Batch operations use Merkle trees for efficient multi-text proofs.
+
+### Setup
+
+```python
+# Python — generate and save a signing key
+from cloakllm import Shield, ShieldConfig, DeploymentKeyPair
+
+keypair = DeploymentKeyPair.generate()
+keypair.save("./keys/signing_key.json")
+
+shield = Shield(ShieldConfig(attestation_key=keypair))
+```
+
+```javascript
+// JavaScript
+const { Shield, ShieldConfig, DeploymentKeyPair } = require('cloakllm');
+
+const keypair = DeploymentKeyPair.generate();
+keypair.save('./keys/signing_key.json');
+
+const shield = new Shield(new ShieldConfig({ attestationKey: keypair }));
+```
+
+Or load from file / environment variable:
+
+```python
+shield = Shield(ShieldConfig(attestation_key_path="./keys/signing_key.json"))
+# Or: export CLOAKLLM_SIGNING_KEY_PATH=./keys/signing_key.json
+```
+
+### Using Certificates
+
+```python
+sanitized, token_map = shield.sanitize("Email john@acme.com")
+cert = token_map.certificate
+
+# Certificate fields: version, timestamp, input_hash, output_hash,
+# entity_count, categories, detection_passes, mode, key_id, signature
+
+# Verify the certificate
+assert cert.verify(keypair.public_key)
+assert shield.verify_certificate(cert)
+
+# Serialize for storage or transmission
+cert_dict = cert.to_dict()
+```
+
+### Batch Attestation with Merkle Trees
+
+```python
+texts = ["Email john@acme.com", "SSN 123-45-6789", "Call 555-0100"]
+sanitized_texts, token_map = shield.sanitize_batch(texts)
+
+# Batch certificate uses Merkle roots instead of individual hashes
+cert = token_map.certificate
+merkle_tree = token_map.merkle_tree
+
+# Verify individual text inclusion in the batch
+from cloakllm import MerkleTree
+import hashlib
+
+leaf = hashlib.sha256(texts[0].encode()).hexdigest()
+proof = merkle_tree["input"].proof(0)
+assert MerkleTree.verify_proof(leaf, proof, merkle_tree["input"].root)
+```
+
+### Cross-Language Compatibility
+
+Certificates are fully cross-language compatible. A certificate signed in Python verifies in JavaScript and vice versa, using identical canonical JSON serialization and Ed25519 signatures.
+
+### Configuration
+
+| Option | Python | JavaScript | Default |
+|--------|--------|------------|---------|
+| Signing keypair | `attestation_key` | `attestationKey` | `None` |
+| Key file path | `attestation_key_path` | `attestationKeyPath` | `None` |
+| Environment variable | `CLOAKLLM_SIGNING_KEY_PATH` | `CLOAKLLM_SIGNING_KEY_PATH` | — |
+
+### Python Optional Dependencies
+
+```bash
+pip install cloakllm[attestation]  # installs pynacl
+# or: pip install cryptography     # also works
+```
+
+JavaScript uses Node.js built-in `crypto` module — no extra dependencies.
 
 ---
 
