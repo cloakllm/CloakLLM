@@ -26,9 +26,9 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 
 | SDK | Version | Install | Docs |
 |-----|---------|---------|------|
-| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.3.2 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
-| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.3.2 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
-| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.3.2 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
+| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.4.0 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
+| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.4.0 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
+| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.4.0 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
 
 ## What it does
 
@@ -41,7 +41,9 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 - **Per-Entity Hashing** — deterministic HMAC-SHA256 hashes per detected entity for cross-request correlation without storing PII
 - **Performance Metrics** — per-pass timing breakdowns (regex, NER, LLM) in audit logs and via `shield.metrics()` API
 - **Incremental Streaming** — `StreamDesanitizer` state machine replaces tokens as chunks arrive, no full buffering
-- **Cryptographic Attestation** — Ed25519-signed sanitization certificates with Merkle tree batch proofs for tamper-evident compliance evidence
+- **Cryptographic Attestation** — Ed25519-signed sanitization certificates with Merkle tree batch proofs and replay-resistant nonces
+- **Multi-Language PII Detection** — 13 locales (DE, FR, ES, IT, PT, NL, PL, SE, NO, DK, FI, GB, AU) with locale-specific patterns
+- **Security Hardened** — Ollama SSRF prevention, thread-safe operations, ReDoS protection, CLI PII redaction by default
 - **Detection Benchmark** — 108-sample labeled PII corpus with recall/precision/F1 harness, CI-enforced thresholds
 - **Middleware Integration** — drop-in support for LiteLLM and OpenAI SDK (Python) and OpenAI/Vercel AI SDK (JS)
 - **MCP Server** — use CloakLLM directly from Claude Desktop, Cursor, or any MCP-compatible client
@@ -99,7 +101,7 @@ This exposes six tools to Claude: **sanitize**, **sanitize_batch**, **desanitize
 
 ## Roadmap
 
-Upcoming: detection benchmarks, Ed25519 cryptographic attestation, and normalized token standard.
+Upcoming: normalized token standard, pluggable detection backends, and enterprise key management.
 
 ## License
 

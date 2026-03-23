@@ -27,12 +27,14 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Custom Patterns](#custom-patterns)
 - [LLM-Powered Detection (Ollama)](#llm-powered-detection-ollama)
 - [Custom LLM Categories](#custom-llm-categories)
+- [Multi-Language Detection](#multi-language-detection)
 - [Entity Hashing](#entity-hashing)
 - [Incremental Streaming](#incremental-streaming)
 - [Cryptographic Attestation](#cryptographic-attestation)
 - [Entity Detection Reference](#entity-detection-reference)
 - [CLI](#cli)
 - [Audit Logs](#audit-logs)
+- [Security](#security)
 - [Disabling / Re-enabling](#disabling--re-enabling)
 
 ---
@@ -472,12 +474,13 @@ Every sanitize/desanitize operation is logged to hash-chained JSONL files:
 | `llm_timeout` | `float` | `10.0` | — | LLM request timeout (seconds) |
 | `llm_confidence` | `float` | `0.85` | — | Confidence threshold for LLM detections |
 | `custom_llm_categories` | `list[tuple[str, str]]` | `[]` | — | Custom `(name, description)` categories for LLM detection |
+| `llm_allow_remote` | `bool` | `False` | `CLOAKLLM_LLM_ALLOW_REMOTE` | Allow non-localhost Ollama URLs (SSRF prevention) |
+| `locale` | `str` | `""` | — | Locale for country-specific PII patterns (e.g., `"de"`, `"fr"`) |
 | `entity_hashing` | `bool` | `False` | `CLOAKLLM_ENTITY_HASHING` | Enable per-entity HMAC-SHA256 hashing |
 | `entity_hash_key` | `str` | `None` | `CLOAKLLM_ENTITY_HASH_KEY` | HMAC key (auto-generated if omitted) |
 | `descriptive_tokens` | `bool` | `True` | — | `[PERSON_0]` vs `[TKN_A3F2]` |
 | `audit_enabled` | `bool` | `True` | — | Enable audit logging |
 | `log_dir` | `Path` | `./cloakllm_audit` | `CLOAKLLM_LOG_DIR` | Audit log directory |
-| `log_original_values` | `bool` | `False` | — | Log original PII values (not recommended) |
 | `otel_enabled` | `bool` | `False` | `CLOAKLLM_OTEL_ENABLED` | Enable OpenTelemetry |
 | `otel_service_name` | `str` | `"cloakllm"` | `OTEL_SERVICE_NAME` | OTel service name |
 | `auto_mode` | `bool` | `True` | — | Auto-sanitize in middleware |
@@ -502,12 +505,13 @@ Every sanitize/desanitize operation is logged to hash-chained JSONL files:
 | `llmTimeout` | `number` | `10000` | — | LLM request timeout (ms) |
 | `llmConfidence` | `number` | `0.85` | — | Confidence threshold for LLM detections |
 | `customLlmCategories` | `Array<{name, description?}>` | `[]` | — | Custom categories for LLM detection |
+| `llmAllowRemote` | `boolean` | `false` | `CLOAKLLM_LLM_ALLOW_REMOTE` | Allow non-localhost Ollama URLs (SSRF prevention) |
+| `locale` | `string` | `""` | — | Locale for country-specific PII patterns (e.g., `"de"`, `"fr"`) |
 | `entityHashing` | `boolean` | `false` | `CLOAKLLM_ENTITY_HASHING` | Enable per-entity HMAC-SHA256 hashing |
 | `entityHashKey` | `string` | `undefined` | `CLOAKLLM_ENTITY_HASH_KEY` | HMAC key (auto-generated if omitted) |
 | `descriptiveTokens` | `boolean` | `true` | — | `[PERSON_0]` vs opaque tokens |
 | `auditEnabled` | `boolean` | `true` | — | Enable audit logging |
 | `logDir` | `string` | `"./cloakllm_audit"` | `CLOAKLLM_LOG_DIR` | Audit log directory |
-| `logOriginalValues` | `boolean` | `false` | — | Log original PII values (not recommended) |
 | `autoMode` | `boolean` | `true` | — | Auto-sanitize in middleware |
 | `mode` | `string` | `"tokenize"` | — | `"tokenize"` (reversible) or `"redact"` (irreversible) |
 | `skipModels` | `string[]` | `[]` | — | Model prefixes to skip |
@@ -522,6 +526,7 @@ These work across all three SDKs:
 | `CLOAKLLM_LLM_DETECTION` | `false` | Enable LLM-based detection |
 | `CLOAKLLM_LLM_MODEL` | `llama3.2` | Ollama model for LLM detection |
 | `CLOAKLLM_OLLAMA_URL` | `http://localhost:11434` | Ollama server URL |
+| `CLOAKLLM_LLM_ALLOW_REMOTE` | `false` | Allow non-localhost Ollama URLs |
 | `CLOAKLLM_SPACY_MODEL` | `en_core_web_sm` | spaCy model (Python only) |
 | `CLOAKLLM_ENTITY_HASHING` | `false` | Enable per-entity HMAC-SHA256 hashing |
 | `CLOAKLLM_ENTITY_HASH_KEY` | *(auto-generated)* | HMAC key for entity hashing |
@@ -927,6 +932,61 @@ Pass `custom_llm_categories` as a JSON string of `[name, description]` pairs:
 
 ---
 
+## Multi-Language Detection
+
+CloakLLM supports locale-specific PII detection for 13 non-US locales. Setting a locale activates country-specific regex patterns for SSNs, phone numbers, IBANs, tax IDs, and national IDs. In Python, it also auto-selects the appropriate spaCy NER model for that language.
+
+### Supported Locales
+
+| Locale | Country | Example Patterns |
+|--------|---------|-----------------|
+| `de` | Germany | Steuer-IdNr, Personalausweis, DE phone, DE IBAN |
+| `fr` | France | NIR (INSEE), carte d'identite, FR phone, FR IBAN |
+| `es` | Spain | DNI/NIE, ES phone, ES IBAN |
+| `it` | Italy | Codice Fiscale, IT phone, IT IBAN |
+| `pt` | Portugal | NIF, PT phone, PT IBAN |
+| `nl` | Netherlands | BSN, NL phone, NL IBAN |
+| `pl` | Poland | PESEL, NIP, PL phone, PL IBAN |
+| `se` | Sweden | Personnummer, SE phone, SE IBAN |
+| `no` | Norway | Fodselsnummer, NO phone, NO IBAN |
+| `dk` | Denmark | CPR-nummer, DK phone, DK IBAN |
+| `fi` | Finland | Henkilotunnus, FI phone, FI IBAN |
+| `gb` | United Kingdom | NINO, GB phone, GB IBAN |
+| `au` | Australia | TFN, AU phone |
+
+### Python
+
+```python
+from cloakllm import Shield, ShieldConfig
+
+# German locale — activates DE-specific patterns and de_core_news_sm spaCy model
+shield = Shield(ShieldConfig(locale="de"))
+
+sanitized, token_map = shield.sanitize("Steuer-IdNr: 12345678901, Tel: +49 30 1234567")
+# → "Steuer-IdNr: [SSN_0], Tel: [PHONE_0]"
+```
+
+### JavaScript
+
+```javascript
+const { Shield, ShieldConfig } = require('cloakllm');
+
+// German locale — activates DE-specific patterns
+const shield = new Shield(new ShieldConfig({ locale: 'de' }));
+
+const [sanitized, tokenMap] = shield.sanitize('Steuer-IdNr: 12345678901, Tel: +49 30 1234567');
+// → "Steuer-IdNr: [SSN_0], Tel: [PHONE_0]"
+```
+
+### Key Behaviors
+
+- **spaCy model auto-selection** (Python only): Each locale maps to the appropriate spaCy language model (e.g., `de` uses `de_core_news_sm`, `fr` uses `fr_core_news_sm`). Install the model with `python -m spacy download <model_name>`.
+- **Pattern replacement**: Locale-specific patterns replace the default US-centric patterns for SSN, phone, and similar categories.
+- **Composable**: Locale patterns work alongside custom patterns, LLM detection, and entity hashing.
+- **Default**: When no locale is set (empty string), US patterns are used.
+
+---
+
 ## Entity Hashing
 
 Per-entity HMAC-SHA256 hashing enables cross-request entity correlation without storing PII. Each detected entity gets a deterministic, keyed hash — the same entity always produces the same hash, allowing you to track "the same person appeared in 47 requests" without knowing who.
@@ -1113,8 +1173,9 @@ shield = Shield(ShieldConfig(attestation_key_path="./keys/signing_key.json"))
 sanitized, token_map = shield.sanitize("Email john@acme.com")
 cert = token_map.certificate
 
-# Certificate fields: version, timestamp, input_hash, output_hash,
+# Certificate fields: version, timestamp, nonce, input_hash, output_hash,
 # entity_count, categories, detection_passes, mode, key_id, signature
+# The nonce field contains a random value for replay prevention
 
 # Verify the certificate
 assert cert.verify(keypair.public_key)
@@ -1203,8 +1264,11 @@ Both SDKs include a CLI for scanning text, verifying audit logs, and viewing sta
 ### Python
 
 ```bash
-# Scan text for PII
+# Scan text for PII (PII values redacted by default)
 python -m cloakllm scan "Send email to john@acme.com, SSN 123-45-6789"
+
+# Show original PII values in output
+python -m cloakllm scan --show-pii "Send email to john@acme.com, SSN 123-45-6789"
 
 # Scan from stdin
 echo "Contact sarah@example.org" | python -m cloakllm scan -
@@ -1306,8 +1370,9 @@ No original PII is stored in audit logs — only hashes, token counts, and categ
 ```python
 shield = Shield()
 
-# Programmatic verification
-is_valid, errors = shield.verify_audit()
+# Programmatic verification — returns (valid, errors, final_seq)
+# final_seq is the last sequence number, useful for truncation detection
+is_valid, errors, final_seq = shield.verify_audit()
 
 # Statistics
 stats = shield.audit_stats()
@@ -1318,8 +1383,9 @@ stats = shield.audit_stats()
 ```javascript
 const shield = new Shield();
 
-// Programmatic verification
-const { valid, errors } = shield.verifyAudit();
+// Programmatic verification — returns { valid, errors, finalSeq }
+// finalSeq is the last sequence number, useful for truncation detection
+const { valid, errors, finalSeq } = shield.verifyAudit();
 
 // Statistics
 const stats = shield.auditStats();
@@ -1337,7 +1403,69 @@ npx cloakllm verify ./cloakllm_audit/
 
 ### Tamper Detection
 
-The hash chain makes tampering evident. Each entry's `entry_hash` is computed from its contents including `prev_hash`. If any entry is modified, deleted, or reordered, the chain breaks and `verify_audit()` / `verifyAudit()` reports the specific entries that fail validation.
+The hash chain makes tampering evident. Each entry's `entry_hash` is computed from its contents including `prev_hash`. If any entry is modified, deleted, or reordered, the chain breaks and `verify_audit()` / `verifyAudit()` reports the specific entries that fail validation. The returned `final_seq` / `finalSeq` value indicates the last sequence number seen, which can be compared against expected counts to detect log truncation.
+
+---
+
+## Security
+
+### Ollama SSRF Prevention
+
+By default, the Ollama LLM detection pass only connects to `localhost` URLs. This prevents server-side request forgery (SSRF) if an attacker controls the `llm_ollama_url` / `llmOllamaUrl` configuration. To allow connections to remote Ollama servers, explicitly opt in:
+
+```python
+# Python
+config = ShieldConfig(llm_detection=True, llm_allow_remote=True)
+```
+
+```javascript
+// JavaScript
+const config = new ShieldConfig({ llmDetection: true, llmAllowRemote: true });
+```
+
+Or via environment variable:
+
+```bash
+export CLOAKLLM_LLM_ALLOW_REMOTE=true
+```
+
+### CLI PII Redaction
+
+The CLI `scan` command redacts detected PII values by default. To display original values in the output, use the `--show-pii` flag:
+
+```bash
+# Default — PII values are redacted in output
+python -m cloakllm scan "Email john@acme.com"
+# → [EMAIL] "j***@***.com"
+
+# Show original PII values
+python -m cloakllm scan --show-pii "Email john@acme.com"
+# → [EMAIL] "john@acme.com"
+```
+
+### Thread Safety
+
+CloakLLM is designed for concurrent use:
+
+- **TokenMap**: Thread-safe. Multiple threads can read/write tokens concurrently.
+- **AuditLogger**: Thread-safe. Concurrent sanitize calls produce correctly ordered, hash-chained audit entries.
+- **LLM cache**: Thread-safe. The Ollama detection cache handles concurrent access without corruption.
+
+### Redacted Analysis
+
+The `analyze()` method supports redacting PII values in its output:
+
+```python
+# Python — redact values in analysis output
+analysis = shield.analyze("Email john@acme.com", redact_values=True)
+# entities[0]["text"] → "[REDACTED]" instead of "john@acme.com"
+```
+
+```javascript
+// JavaScript — redact values in analysis output
+const analysis = shield.analyze('Email john@acme.com', { redactValues: true });
+// entities[0].text → "[REDACTED]" instead of "john@acme.com"
+```
 
 ---
 
