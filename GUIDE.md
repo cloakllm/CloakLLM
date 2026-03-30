@@ -35,6 +35,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [CLI](#cli)
 - [Audit Logs](#audit-logs)
 - [Security](#security)
+- [Context Risk Analysis](#context-risk-analysis)
 - [Disabling / Re-enabling](#disabling--re-enabling)
 
 ---
@@ -485,6 +486,8 @@ Every sanitize/desanitize operation is logged to hash-chained JSONL files:
 | `otel_service_name` | `str` | `"cloakllm"` | `OTEL_SERVICE_NAME` | OTel service name |
 | `auto_mode` | `bool` | `True` | — | Auto-sanitize in middleware |
 | `mode` | `str` | `"tokenize"` | — | `"tokenize"` (reversible) or `"redact"` (irreversible) |
+| `context_analysis` | `bool` | `False` | `CLOAKLLM_CONTEXT_ANALYSIS` | Enable automatic context risk analysis on every `sanitize()` call |
+| `context_risk_threshold` | `float` | `0.5` | — | Log a warning when context risk score exceeds this threshold |
 | `skip_models` | `list[str]` | `[]` | — | Model prefixes to skip |
 
 ### JavaScript ShieldConfig
@@ -514,6 +517,8 @@ Every sanitize/desanitize operation is logged to hash-chained JSONL files:
 | `logDir` | `string` | `"./cloakllm_audit"` | `CLOAKLLM_LOG_DIR` | Audit log directory |
 | `autoMode` | `boolean` | `true` | — | Auto-sanitize in middleware |
 | `mode` | `string` | `"tokenize"` | — | `"tokenize"` (reversible) or `"redact"` (irreversible) |
+| `contextAnalysis` | `boolean` | `false` | `CLOAKLLM_CONTEXT_ANALYSIS` | Enable automatic context risk analysis on every `sanitize()` call |
+| `contextRiskThreshold` | `number` | `0.5` | — | Log a warning when context risk score exceeds this threshold |
 | `skipModels` | `string[]` | `[]` | — | Model prefixes to skip |
 
 ### Environment Variables
@@ -530,6 +535,7 @@ These work across all three SDKs:
 | `CLOAKLLM_SPACY_MODEL` | `en_core_web_sm` | spaCy model (Python only) |
 | `CLOAKLLM_ENTITY_HASHING` | `false` | Enable per-entity HMAC-SHA256 hashing |
 | `CLOAKLLM_ENTITY_HASH_KEY` | *(auto-generated)* | HMAC key for entity hashing |
+| `CLOAKLLM_CONTEXT_ANALYSIS` | `false` | Enable automatic context risk analysis |
 | `CLOAKLLM_AUDIT_ENABLED` | `true` | Enable/disable audit logging (MCP) |
 | `CLOAKLLM_OTEL_ENABLED` | `false` | Enable OpenTelemetry (Python only) |
 | `OTEL_SERVICE_NAME` | `cloakllm` | OpenTelemetry service name (Python only) |
@@ -1465,6 +1471,86 @@ analysis = shield.analyze("Email john@acme.com", redact_values=True)
 // JavaScript — redact values in analysis output
 const analysis = shield.analyze('Email john@acme.com', { redactValues: true });
 // entities[0].text → "[REDACTED]" instead of "john@acme.com"
+```
+
+---
+
+## Context Risk Analysis
+
+Even after tokenization, surrounding context can reveal identity. CloakLLM's `ContextAnalyzer` scores this re-identification risk.
+
+### Standalone Analysis
+
+**Python:**
+```python
+from cloakllm import Shield
+
+shield = Shield()
+sanitized, _ = shield.sanitize("The CEO of Acme Corp works at their office")
+
+risk = shield.analyze_context_risk(sanitized)
+print(risk)
+# {'token_density': 0.375, 'identifying_descriptors': 1, 'relationship_edges': 1,
+#  'risk_score': 0.513, 'risk_level': 'medium', 'warnings': [...]}
+```
+
+**JavaScript:**
+```javascript
+const { Shield } = require('cloakllm');
+
+const shield = new Shield();
+const [sanitized] = shield.sanitize('The CEO of Acme Corp works at their office');
+
+const risk = shield.analyzeContextRisk(sanitized);
+console.log(risk);
+// { token_density: 0.375, identifying_descriptors: 1, relationship_edges: 1,
+//   risk_score: 0.513, risk_level: 'medium', warnings: [...] }
+```
+
+### Automatic Analysis
+
+Enable `context_analysis` to automatically analyze every `sanitize()` call:
+
+**Python:**
+```python
+shield = Shield(ShieldConfig(context_analysis=True, context_risk_threshold=0.5))
+sanitized, token_map = shield.sanitize("The CEO of Acme Corp lives in New York")
+
+print(token_map.risk_assessment)
+# {'risk_score': 0.65, 'risk_level': 'medium', ...}
+# Warning logged if risk_score > context_risk_threshold
+```
+
+**JavaScript:**
+```javascript
+const shield = new Shield(new ShieldConfig({
+  contextAnalysis: true,
+  contextRiskThreshold: 0.5,
+}));
+const [sanitized, tokenMap] = shield.sanitize('The CEO of Acme Corp lives in New York');
+
+console.log(tokenMap.riskAssessment);
+// { risk_score: 0.65, risk_level: 'medium', ... }
+```
+
+### Three Signals
+
+| Signal | Description | Weight |
+|--------|-------------|--------|
+| Token density | Ratio of tokens to total words | ×1.5 |
+| Identifying descriptors | Words like "CEO", "founder", "only" near tokens | ×0.15 each |
+| Relationship edges | Phrases like "works at", "lives in" connecting two tokens | ×0.20 each |
+
+Risk levels: **low** (≤0.3), **medium** (0.3–0.7), **high** (>0.7). Score capped at 1.0.
+
+### CLI
+
+```bash
+# Python
+python -m cloakllm scan "The CEO of Acme Corp works in NYC" --context-risk
+
+# JavaScript
+npx cloakllm scan "The CEO of Acme Corp works in NYC" --context-risk
 ```
 
 ---
