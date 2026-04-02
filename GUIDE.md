@@ -36,6 +36,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Audit Logs](#audit-logs)
 - [Security](#security)
 - [Context Risk Analysis](#context-risk-analysis)
+- [Token Specification](#token-specification)
 - [Disabling / Re-enabling](#disabling--re-enabling)
 
 ---
@@ -1552,6 +1553,64 @@ python -m cloakllm scan "The CEO of Acme Corp works in NYC" --context-risk
 # JavaScript
 npx cloakllm scan "The CEO of Acme Corp works in NYC" --context-risk
 ```
+
+---
+
+## Token Specification
+
+CloakLLM v0.5.1 introduces a formal token standard. The full spec is in [TOKEN_SPEC.md](TOKEN_SPEC.md).
+
+### Token Format
+
+All tokens follow the grammar `[CATEGORY_N]` in tokenize mode or `[CATEGORY_REDACTED]` in redact mode:
+
+- Category: uppercase letters, digits, and underscores (e.g., `EMAIL`, `CREDIT_CARD`, `DATE_OF_BIRTH`)
+- Suffix: zero-based counter (e.g., `0`, `1`, `42`) or `REDACTED`
+- Maximum token length: 40 characters (including brackets)
+
+### Validation Utilities
+
+Both SDKs export functions to validate and parse tokens:
+
+**Python:**
+
+```python
+from cloakllm import validate_token, parse_token, is_redacted_token, validate_category_name
+from cloakllm import BUILTIN_CATEGORIES, MAX_TOKEN_LENGTH
+
+validate_token("[EMAIL_0]")          # True
+validate_token("[email_0]")          # False (lowercase)
+parse_token("[PERSON_3]")           # ("PERSON", "3")
+parse_token("[SSN_REDACTED]")       # ("SSN", "REDACTED")
+is_redacted_token("[SSN_REDACTED]") # True
+validate_category_name("MY_TYPE")   # True
+len(BUILTIN_CATEGORIES)             # 62 built-in categories
+```
+
+**JavaScript:**
+
+```javascript
+const {
+  validateToken, parseToken, isRedactedToken, validateCategoryName,
+  BUILTIN_CATEGORIES, MAX_TOKEN_LENGTH,
+} = require('cloakllm');
+
+validateToken('[EMAIL_0]');          // true
+validateToken('[email_0]');          // false
+parseToken('[PERSON_3]');           // { category: 'PERSON', suffix: '3' }
+isRedactedToken('[SSN_REDACTED]');  // true
+validateCategoryName('MY_TYPE');    // true
+BUILTIN_CATEGORIES.size;            // 62
+```
+
+### Custom Category Names
+
+Custom categories (via `custom_patterns` or `custom_llm_categories`) must:
+
+- Match the pattern `^[A-Z][A-Z0-9_]*$`
+- Not collide with any of the 62 built-in category names
+
+Both SDKs enforce these rules at config creation time.
 
 ---
 
