@@ -37,6 +37,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Security](#security)
 - [Context Risk Analysis](#context-risk-analysis)
 - [Token Specification](#token-specification)
+- [Pluggable Detection Backends](#pluggable-detection-backends)
 - [Disabling / Re-enabling](#disabling--re-enabling)
 
 ---
@@ -419,9 +420,9 @@ The MCP server exposes 6 tools:
 
 ## How It Works
 
-CloakLLM uses a multi-pass detection pipeline to find PII before it reaches an LLM provider.
+CloakLLM uses a multi-pass detection pipeline to find PII before it reaches an LLM provider. The pipeline is built from pluggable backends — you can replace or extend any stage (see [Pluggable Detection Backends](#pluggable-detection-backends)).
 
-### 3-Pass Detection
+### Default 3-Pass Detection
 
 1. **Regex** (both SDKs) — High-precision pattern matching for structured data: emails, SSNs, credit cards, phone numbers, IP addresses, API keys, AWS keys, JWTs, IBANs.
 
@@ -1611,6 +1612,112 @@ Custom categories (via `custom_patterns` or `custom_llm_categories`) must:
 - Not collide with any of the 62 built-in category names
 
 Both SDKs enforce these rules at config creation time.
+
+---
+
+## Pluggable Detection Backends
+
+v0.5.2 introduces a `DetectorBackend` base class that lets you replace or extend the default detection pipeline. The built-in pipeline runs regex → NER → LLM (opt-in). With pluggable backends, you can swap any stage, add custom detectors, or build an entirely custom pipeline.
+
+### Writing a Custom Backend
+
+**Python:**
+
+```python
+from cloakllm import DetectorBackend, Shield
+
+class ProfanityBackend(DetectorBackend):
+    @property
+    def name(self):
+        return "profanity"
+
+    def detect(self, text, covered_spans):
+        from cloakllm.detector import Detection
+        detections = []
+        bad_words = {"badword1", "badword2"}
+        for word in bad_words:
+            idx = text.lower().find(word)
+            if idx != -1:
+                span = (idx, idx + len(word))
+                if not any(s <= idx and idx + len(word) <= e for s, e in covered_spans):
+                    detections.append(Detection("PROFANITY", idx, idx + len(word), word, 1.0, "profanity"))
+                    covered_spans.append(span)
+        return detections
+```
+
+**JavaScript:**
+
+```javascript
+const { DetectorBackend, Shield } = require('cloakllm');
+
+class ProfanityBackend extends DetectorBackend {
+  get name() { return 'profanity'; }
+
+  detect(text, coveredSpans) {
+    const detections = [];
+    const badWords = ['badword1', 'badword2'];
+    for (const word of badWords) {
+      const idx = text.toLowerCase().indexOf(word);
+      if (idx !== -1) {
+        const end = idx + word.length;
+        const overlaps = coveredSpans.some(([s, e]) => s <= idx && end <= e);
+        if (!overlaps) {
+          detections.push({ category: 'PROFANITY', start: idx, end, text: word, confidence: 1.0, source: 'profanity' });
+          coveredSpans.push([idx, end]);
+        }
+      }
+    }
+    return detections;
+  }
+}
+```
+
+### Using Custom Backends
+
+Pass a `backends` array to `Shield` to replace the default pipeline:
+
+**Python:**
+
+```python
+from cloakllm import Shield, RegexBackend, ShieldConfig
+
+config = ShieldConfig()
+profanity = ProfanityBackend()
+regex = RegexBackend(config)
+
+# Custom pipeline: regex first, then profanity
+shield = Shield(config, backends=[regex, profanity])
+sanitized, token_map = shield.sanitize("Email john@acme.com, badword1 detected")
+```
+
+**JavaScript:**
+
+```javascript
+const { Shield, ShieldConfig, RegexBackend } = require('cloakllm');
+
+const config = new ShieldConfig();
+const profanity = new ProfanityBackend();
+const regex = new RegexBackend(config);
+
+const shield = new Shield(config, { backends: [regex, profanity] });
+const [sanitized, tokenMap] = shield.sanitize('Email john@acme.com, badword1 detected');
+```
+
+### Built-In Backends
+
+Both SDKs export three built-in backend classes:
+
+| Backend | Name | Description |
+|---------|------|-------------|
+| `RegexBackend` | `"regex"` | Pattern matching for structured PII (emails, SSNs, etc.) |
+| `NerBackend` | `"ner"` | Named entity recognition (spaCy in Python, compromise in JS) |
+| `LlmBackend` | `"llm"` | Ollama-based semantic detection for contextual PII |
+
+When no `backends` parameter is provided, Shield builds the default pipeline automatically (regex → NER → LLM if enabled).
+
+### Dynamic Metrics
+
+When custom backends are used, timing keys in `shield.metrics()` and audit log entries are derived from each backend's `name` property (e.g., `profanity_ms`), instead of the hardcoded `regex_ms`/`ner_ms`/`llm_ms`.
 
 ---
 
