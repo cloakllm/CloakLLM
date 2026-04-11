@@ -86,6 +86,8 @@ cloakllm.enable(openaiClient);  // Wraps OpenAI SDK
 
 ### MCP (Claude Desktop)
 
+> **Note:** MCP tools are called *by the LLM* after it receives your prompt. The MCP server cannot prevent PII in your initial prompt from reaching the provider. For prompt-level protection, use the SDK middleware above.
+
 Add to your `claude_desktop_config.json`:
 
 ```json

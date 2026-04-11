@@ -298,6 +298,8 @@ const { valid, errors } = shield.verifyAudit();
 
 ### MCP — Claude Desktop
 
+> **Important:** MCP tools are called *by the LLM*, not before it. Your prompt is sent to the LLM provider first, then the LLM decides to call CloakLLM's tools. This means the MCP server **cannot** prevent PII in your prompt from reaching the provider. It is useful for sanitizing data the LLM works with *during* a conversation (documents, files, tool outputs). To protect prompts before they leave your infrastructure, use the SDK middleware instead (`enable_openai` / `cloakllm.enable()`).
+
 Add CloakLLM to your `claude_desktop_config.json`:
 
 ```json
