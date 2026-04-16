@@ -38,6 +38,8 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Context Risk Analysis](#context-risk-analysis)
 - [Token Specification](#token-specification)
 - [Pluggable Detection Backends](#pluggable-detection-backends)
+- [Article 12 Compliance Mode](#article-12-compliance-mode)
+- [Enterprise Key Management](#enterprise-key-management)
 - [Disabling / Re-enabling](#disabling--re-enabling)
 
 ---
@@ -1720,6 +1722,172 @@ When no `backends` parameter is provided, Shield builds the default pipeline aut
 ### Dynamic Metrics
 
 When custom backends are used, timing keys in `shield.metrics()` and audit log entries are derived from each backend's `name` property (e.g., `profanity_ms`), instead of the hardcoded `regex_ms`/`ner_ms`/`llm_ms`.
+
+---
+
+## Article 12 Compliance Mode
+
+CloakLLM v0.6.0 introduces a formal EU AI Act Article 12 compliance profile. Activating it adds tamper-detectable compliance metadata to every audit entry, enables a runtime guard against PII leakage in logs, and unlocks structured compliance reporting for auditors.
+
+For the regulatory rationale, see [The Article 12 Paradox whitepaper](https://cloakllm.dev/whitepaper) and [COMPLIANCE.md](COMPLIANCE.md).
+
+### Activation
+
+**Python:**
+
+```python
+from cloakllm import Shield, ShieldConfig
+
+shield = Shield(ShieldConfig(
+    compliance_mode="eu_ai_act_article12",
+    retention_hint_days=180,  # default; Article 12 minimum for deployers
+))
+```
+
+**JavaScript:**
+
+```javascript
+const { Shield, ShieldConfig } = require('cloakllm');
+
+const shield = new Shield(new ShieldConfig({
+  complianceMode: 'eu_ai_act_article12',
+  retentionHintDays: 180,
+}));
+```
+
+When activated, every audit entry gains four fields, all included in the SHA-256 hash chain:
+
+| Field | Value | Purpose |
+|---|---|---|
+| `compliance_version` | `"eu_ai_act_article12_v1"` | Schema version for regulator-facing tooling |
+| `article_ref` | `["EU_AI_Act_Art_12", "EU_AI_Act_Art_19"]` | Articles satisfied by this entry |
+| `retention_hint_days` | `180` (default) | Recommended retention for downstream log-rotation systems |
+| `pii_in_log` | `false` | Asserted at runtime — never `true` |
+
+### compliance_summary()
+
+Returns a structured map of EU AI Act and GDPR articles addressed by the current configuration.
+
+**Python:**
+
+```python
+summary = shield.compliance_summary()
+# summary["compliance_mode"]: "eu_ai_act_article12"
+# summary["articles_addressed"]: list of 6 article entries (each: article, status, notes)
+# summary["config_snapshot"]: current config
+# summary["generated_at"]: ISO timestamp
+# summary["cloakllm_version"]: "0.6.0"
+```
+
+**JavaScript:** `shield.complianceSummary()` (same structure).
+
+### export_compliance_config()
+
+Writes the compliance summary to a JSON file. This is the artifact you hand to an auditor.
+
+**Python:**
+
+```python
+shield.export_compliance_config("./compliance_snapshot.json")
+```
+
+**JavaScript:**
+
+```javascript
+shield.exportComplianceConfig('./compliance_snapshot.json');
+```
+
+### verify_audit() compliance report
+
+Returns a structured compliance report with a `verdict` field of `"COMPLIANT"` or `"NON_COMPLIANT"`.
+
+**Python:**
+
+```python
+report = shield.verify_audit(output_format="compliance_report")
+# {
+#   "audit_dir": "./cloakllm_audit",
+#   "period": {"from": "...", "to": "..."},
+#   "total_entries": 142,
+#   "chain_integrity": "verified",
+#   "pii_in_logs": False,
+#   "compliance_mode_entries": 142,
+#   "non_compliance_mode_entries": 0,
+#   "pii_categories_detected": {"EMAIL": 34, "PERSON": 28, ...},
+#   "certificates_present": 0,
+#   "anomalies": [],
+#   "verdict": "COMPLIANT",
+# }
+```
+
+**JavaScript:**
+
+```javascript
+const report = shield.verifyAudit({ outputFormat: 'compliance_report' });
+console.log(report.verdict);  // "COMPLIANT" | "NON_COMPLIANT"
+```
+
+### CLI
+
+```bash
+cloakllm verify ./cloakllm_audit/ --format compliance_report
+```
+
+Emits the report as JSON to stdout. Exit code `0` for COMPLIANT, `1` for NON_COMPLIANT.
+
+### The PII guard
+
+In compliance mode, every audit entry passes through `_assert_no_pii_in_entry` before being hashed. If any field of `entity_details` contains forbidden keys (`original_value`, `original_text`, `raw_text`, `plain_text`, `value`), the write is rejected with a `RuntimeError`. This is the structural enforcement of CloakLLM's core invariant: **audit logs contain zero original PII.**
+
+---
+
+## Enterprise Key Management
+
+For organisations requiring HSM-backed signing keys for sanitization certificates, CloakLLM v0.6.0 adds optional KMS integration (Python SDK only).
+
+```bash
+pip install cloakllm[kms]
+```
+
+### Supported providers
+
+| Provider | Config value | SDK installed by `[kms]` extra |
+|---|---|---|
+| AWS KMS | `attestation_key_provider="aws_kms"` | `boto3` |
+| GCP KMS | `attestation_key_provider="gcp_kms"` | `google-cloud-kms` |
+| Azure Key Vault | `attestation_key_provider="azure_keyvault"` | `azure-keyvault-keys`, `azure-identity` |
+| HashiCorp Vault | `attestation_key_provider="hashicorp_vault"` | `hvac` |
+
+### Usage
+
+```python
+from cloakllm import Shield, ShieldConfig
+
+shield = Shield(ShieldConfig(
+    attestation_key_provider="aws_kms",
+    attestation_key_id="arn:aws:kms:eu-west-1:123:key/abc-...",
+    key_rotation_enabled=True,
+))
+```
+
+When `key_rotation_enabled=True`, a `key_rotation_event` audit entry is logged at session init recording `key_id`, `key_provider`, and `key_version`. No PII is included.
+
+### Custom providers
+
+Subclass `KeyProvider` and implement the `key_id`, `public_key_b64`, and `sign(data)` interface:
+
+```python
+from cloakllm import KeyProvider
+
+class MyHSMProvider(KeyProvider):
+    @property
+    def key_id(self): ...
+    @property
+    def public_key_b64(self): ...
+    def sign(self, data: bytes) -> bytes: ...
+```
+
+Then pass an instance via `ShieldConfig(attestation_key=provider)`.
 
 ---
 
