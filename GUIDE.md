@@ -1843,13 +1843,15 @@ In compliance mode, every audit entry passes through `_assert_no_pii_in_entry` b
 
 ## Enterprise Key Management
 
-For organisations requiring HSM-backed signing keys for sanitization certificates, CloakLLM v0.6.0 adds optional KMS integration (Python SDK only).
+> **⚠ EXPERIMENTAL — disabled in v0.6.1.** The KMS providers shipped in v0.6.0 had bugs that produced unverifiable signatures. They now raise `NotImplementedError` at runtime. Use `LocalKeyProvider` (the default) for production attestation. Full rebuild planned for v0.7.0.
+
+The scaffolding for HSM-backed signing keys is in place but not production-usable:
 
 ```bash
-pip install cloakllm[kms]
+pip install cloakllm[kms]  # installs SDK deps for future development
 ```
 
-### Supported providers
+### Supported providers (scaffolding)
 
 | Provider | Config value | SDK installed by `[kms]` extra |
 |---|---|---|

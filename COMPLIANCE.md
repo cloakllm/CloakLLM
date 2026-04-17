@@ -1,6 +1,6 @@
 # CloakLLM Compliance Coverage
 
-**Version:** 0.6.0  ·  **Last updated:** 2026-04-16
+**Version:** 0.6.1  ·  **Last updated:** 2026-04-16
 
 This document maps CloakLLM's technical features to specific articles of the EU AI Act and GDPR. It is intended for compliance officers, DPOs, and auditors evaluating CloakLLM as PII-protection middleware for high-risk AI systems.
 
@@ -115,18 +115,22 @@ Outputs structured JSON. Exit code `0` = COMPLIANT, `1` = NON_COMPLIANT.
 
 ## Enterprise Key Management
 
-For organisations requiring HSM-backed signing keys for sanitization certificates, CloakLLM v0.6.0 adds optional KMS integration (Python SDK only):
+> **⚠ EXPERIMENTAL (v0.6.1)** — The KMS providers shipped in v0.6.0 had bugs that produced unverifiable signatures (incorrect public-key encoding and signing algorithm per provider). v0.6.1 ships them as scaffolding only: each provider raises `NotImplementedError` at runtime with a pointer to the v0.7.0 rebuild plan. Use `LocalKeyProvider` (the default in-process Ed25519 keypair) for production attestation.
 
-| Provider | Config value |
-|---|---|
-| AWS KMS | `attestation_key_provider="aws_kms"` |
-| GCP KMS | `attestation_key_provider="gcp_kms"` |
-| Azure Key Vault | `attestation_key_provider="azure_keyvault"` |
-| HashiCorp Vault | `attestation_key_provider="hashicorp_vault"` |
+The KMS provider scaffolding (Python SDK only) covers four providers:
 
-Install: `pip install cloakllm[kms]`
+| Provider | Config value | Status |
+|---|---|---|
+| AWS KMS | `attestation_key_provider="aws_kms"` | Experimental — disabled in v0.6.1 |
+| GCP KMS | `attestation_key_provider="gcp_kms"` | Experimental — disabled in v0.6.1 |
+| Azure Key Vault | `attestation_key_provider="azure_keyvault"` | Experimental — disabled in v0.6.1 |
+| HashiCorp Vault | `attestation_key_provider="hashicorp_vault"` | Experimental — disabled in v0.6.1 |
 
-When `key_rotation_enabled=True`, a `key_rotation_event` audit entry is logged at session init recording the key id, provider, and version — no PII.
+`pip install cloakllm[kms]` installs the SDKs (boto3, google-cloud-kms, etc.) so future development continues, but operations raise immediately with a clear message.
+
+Production attestation should use `LocalKeyProvider` (default) until v0.7.0.
+
+When `key_rotation_enabled=True` (with `LocalKeyProvider`), a `key_rotation_event` audit entry is logged at session init recording the key id, provider, and version — no PII.
 
 ---
 
