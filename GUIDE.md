@@ -1358,18 +1358,18 @@ Each line is a JSON object with these key fields:
 | `seq` | Sequence number within the file |
 | `timestamp` | ISO 8601 timestamp |
 | `event_type` | `"sanitize"`, `"desanitize"`, `"sanitize_batch"`, `"desanitize_batch"`, `"shield_enabled"`, or `"shield_disabled"` |
-| `entity_count` | Number of entities detected |
+| `entity_count` | On `sanitize` entries: number of entities detected in the input. On `desanitize` entries (v0.6.3+): number of tokens that actually appeared in the input passed to `desanitize()` (not the size of the token map). |
 | `categories` | Map of category → count |
 | `prompt_hash` | SHA-256 hash of the original text |
 | `sanitized_hash` | SHA-256 hash of the sanitized text |
 | `model` | LLM model name (if provided) |
 | `provider` | LLM provider name (if provided) |
-| `tokens_used` | List of tokens used (no original values) |
-| `latency_ms` | Processing time in milliseconds |
+| `tokens_used` | On `sanitize` entries: every token issued for the input. On `desanitize` entries (v0.6.3+): only the tokens actually present in the desanitize input — not the full map. To reconstruct the full map, read the matching `sanitize` entry. |
+| `latency_ms` | Processing time in milliseconds. On `desanitize` and `desanitize_batch` entries (v0.6.3+) this is bucketed to 10 ms granularity to close a token-presence side channel; the `Shield.metrics()` API still exposes full-precision values for performance debugging. |
 | `metadata` | Additional context (e.g., `user_id`, `session_id`) |
 | `mode` | `"tokenize"` or `"redact"` |
-| `entity_details` | Per-entity metadata array (PII-safe: category, offsets, confidence, source, token, and `entity_hash` when hashing is enabled) |
-| `timing` | Per-pass breakdown: `total_ms`, `detection_ms`, `regex_ms`, `ner_ms`, `llm_ms`, `tokenization_ms` |
+| `entity_details` | Per-entity metadata array (PII-safe: category, offsets, confidence, source, token, and `entity_hash` when hashing is enabled). On `desanitize` entries (v0.6.3+): filtered to the present subset, matching `tokens_used`. |
+| `timing` | Per-pass breakdown: `total_ms`, `detection_ms`, `regex_ms`, `ner_ms`, `llm_ms`, `tokenization_ms`. On `desanitize` and `desanitize_batch` entries (v0.6.3+) the `total_ms` and `tokenization_ms` fields are 10 ms-bucketed for the same reason as `latency_ms`. |
 | `prev_hash` | SHA-256 hash of the previous entry |
 | `entry_hash` | SHA-256 hash of this entry |
 
