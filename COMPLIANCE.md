@@ -68,6 +68,25 @@ The following invariants are enforced in code (not merely documented). Any viola
 
 ---
 
+## Cross-Language Compatibility (v0.6.1+)
+
+CloakLLM ships parallel Python and JavaScript SDKs. Audit chains written by one SDK can normally be verified by the other — the canonical-JSON serializer and SHA-256 hashing are byte-equivalent across both.
+
+**One known asymmetry exists for chains written before v0.6.1:**
+
+Python v0.6.0 and earlier serialized non-ASCII characters in audit entries using JSON `\uXXXX` escapes (e.g. `é` → `\u00e9`). JavaScript v0.6.0 and earlier preserved the raw UTF-8 bytes. As a result, an audit chain written by Python v0.6.0 containing non-ASCII data (e.g. an `error_message` with European characters) cannot be verified by the JS SDK, and vice versa, when running with `legacy_canonical=True` / `legacyCanonical: true`.
+
+**Resolution:** v0.6.1 introduced a unified canonical serializer (`canonical.py` / `canonical.js`) that preserves UTF-8 in both SDKs. All chains written by v0.6.1 or later are fully cross-SDK verifiable.
+
+**For legacy chains:**
+- Verify Python-written chains with `shield.verify_audit(legacy_canonical=True)` from Python.
+- Verify JS-written chains with `shield.verifyAudit({ legacyCanonical: true })` from JS.
+- Re-running verification with `legacy_canonical=False` (the default) on a v0.6.1+ chain works from either SDK.
+
+This limitation only affects chains written by v0.6.0 that contain non-ASCII characters. ASCII-only legacy chains verify correctly across both SDKs.
+
+---
+
 ## How to Verify Compliance
 
 ### Programmatic verification (Python)
