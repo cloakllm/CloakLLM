@@ -3,6 +3,8 @@
 </p>
 
 <p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://openinventionnetwork.com/" target="_blank" rel="noopener"><img src="https://cloakllm.dev/oin-member.png" alt="Open Invention Network Community Member" height="20"></a>
   <a href="https://pypi.org/project/cloakllm/"><img src="https://img.shields.io/pypi/dw/cloakllm?label=pypi%20%28sdk%29" alt="PyPI Downloads"></a>
   <a href="https://pypi.org/project/cloakllm-mcp/"><img src="https://img.shields.io/pypi/dw/cloakllm-mcp?label=pypi%20%28mcp%29" alt="PyPI Downloads (MCP)"></a>
   <a href="https://www.npmjs.com/package/cloakllm"><img src="https://img.shields.io/npm/dw/cloakllm?label=npm" alt="npm Downloads"></a>
