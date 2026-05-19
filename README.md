@@ -28,9 +28,9 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 
 | SDK | Version | Install | Docs |
 |-----|---------|---------|------|
-| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.6.5 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
-| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.6.5 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
-| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.6.5 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
+| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.7.0 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
+| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.7.0 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
+| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.7.0 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
 
 ## What it does
 
@@ -49,6 +49,7 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 - **Normalized Token Standard** — formal spec ([TOKEN_SPEC.md](TOKEN_SPEC.md)) with validation utilities (`validateToken`, `parseToken`), canonical regex, and built-in category registry
 - **Pluggable Detection Backends** — `DetectorBackend` base class for custom detection pipelines; swap or extend the default regex→NER→LLM pipeline with your own backends
 - **Article 12 Compliance Mode** — formal EU AI Act compliance profile (`compliance_mode="eu_ai_act_article12"`) adds tamper-detectable compliance fields to every audit entry, plus `compliance_summary()` and structured `verify_audit(output_format="compliance_report")` for auditors. See [COMPLIANCE.md](COMPLIANCE.md).
+- **Article 4a Bias Detection Workflow** *(v0.7.0+)* — `BiasDetectionSession` context-managed API for processing GDPR Article 9 special-category PII (race, ethnicity, religion, political opinion, health/biometric, sexual orientation, trade union, genetic) strictly for AI bias detection and correction. Enforces all six Article 4a safeguards: recorded justification, pseudonymisation, in-memory-only token map, `categories_allowed` scope cap, hard-bounded `max_lifetime_seconds` with auto-wipe on exit, and full audit-chain recording. Builds on Article 12. See [COMPLIANCE.md § Article 4a](COMPLIANCE.md).
 - **Enterprise Key Management** *(experimental — disabled in v0.6.1)* — KMS/HSM provider scaffolding (AWS KMS, GCP KMS, Azure Key Vault, HashiCorp Vault) is in place but currently raises `NotImplementedError`. Use `LocalKeyProvider` until v0.7.0.
 - **Security Hardened** — Ollama SSRF prevention, thread-safe operations, ReDoS protection, CLI PII redaction by default
 - **Detection Benchmark** — 108-sample labeled PII corpus with recall/precision/F1 harness, CI-enforced thresholds
@@ -106,11 +107,11 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-This exposes seven tools to Claude: **sanitize**, **sanitize_batch**, **desanitize**, **desanitize_batch**, **analyze**, **analyze_batch**, and **analyze_context_risk** (added v0.5.0).
+This exposes ten tools to Claude: **sanitize**, **sanitize_batch**, **desanitize**, **desanitize_batch**, **analyze**, **analyze_batch**, **analyze_context_risk** (added v0.5.0), and **bias_detection_session_start** / **bias_pseudonymise** / **bias_detection_session_end** (added v0.7.0 for the EU AI Act Article 4a workflow).
 
 ## Roadmap
 
-Upcoming: Article 4a bias-detection workflow for special-category PII (v0.7), structured compliance reporting API (v0.8), full EU AI Act suite (v1.0).
+Shipped in v0.7.0: Article 4a bias-detection workflow for special-category PII (`BiasDetectionSession`). Upcoming: KMS provider rebuild — AWS / GCP / Azure / Vault, one per v0.7.x point release — and the structured compliance reporting API (`generate_compliance_report()`) in v0.8.0. Full EU AI Act suite (sandbox-ready config, partner integrations, SME tier) in v1.0.
 
 ## License
 

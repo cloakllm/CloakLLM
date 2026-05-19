@@ -39,6 +39,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Token Specification](#token-specification)
 - [Pluggable Detection Backends](#pluggable-detection-backends)
 - [Article 12 Compliance Mode](#article-12-compliance-mode)
+- [Article 4a Bias Detection Workflow](#article-4a-bias-detection-workflow-v070) **(v0.7.0)**
 - [Enterprise Key Management](#enterprise-key-management)
 - [Disabling / Re-enabling](#disabling--re-enabling)
 
@@ -1838,6 +1839,120 @@ Emits the report as JSON to stdout. Exit code `0` for COMPLIANT, `1` for NON_COM
 ### The PII guard
 
 In compliance mode, every audit entry passes through `_assert_no_pii_in_entry` before being hashed. If any field of `entity_details` contains forbidden keys (`original_value`, `original_text`, `raw_text`, `plain_text`, `value`), the write is rejected with a `RuntimeError`. This is the structural enforcement of CloakLLM's core invariant: **audit logs contain zero original PII.**
+
+---
+
+## Article 4a Bias Detection Workflow (v0.7.0+)
+
+The EU AI Act's new **Article 4a** (added by the May 7 2026 Digital Omnibus) permits processing GDPR Article 9 special-category data — race, ethnic origin, religion, political opinion, health, biometric data, sexual orientation, trade union membership, genetic data — strictly for **bias detection and correction in AI systems**, subject to six safeguards.
+
+CloakLLM's `BiasDetectionSession` operationalises all six. The session is a **sibling class** over a `Shield` (composition, not inheritance) and requires the underlying Shield to be in `compliance_mode="eu_ai_act_article12"` — Article 4a builds on Article 12.
+
+### Eight new special-category tokens
+
+`SPECIAL_CATEGORY_CATEGORIES` (added v0.7.0): `RACE`, `ETHNICITY`, `RELIGION`, `POLITICAL_OPINION`, `HEALTH_BIOMETRIC`, `SEXUAL_ORIENTATION`, `TRADE_UNION`, `GENETIC`. These are **deliberately not auto-detected by regex** — the patterns have unacceptably high false-positive rates and the categories are context-dependent. Spans are introduced either by caller-declared `force_categories` in `pseudonymise()` or by opt-in LLM detection.
+
+### Python
+
+```python
+from cloakllm import Shield, ShieldConfig, BiasDetectionSession
+
+shield = Shield(ShieldConfig(compliance_mode="eu_ai_act_article12"))
+
+with BiasDetectionSession(
+    shield=shield,
+    purpose="Pre-deployment fairness audit of credit-scoring model v3.2",
+    necessity_justification=(
+        "Synthetic data evaluated and rejected — does not preserve "
+        "covariance between protected characteristics and credit history. "
+        "See internal report XYZ-2026-04."
+    ),
+    categories_allowed={"RACE", "ETHNICITY", "RELIGION"},
+    max_lifetime_seconds=86400,  # 24 hours (required; max 7 days)
+) as session:
+    for record in protected_dataset:
+        pseudonymised, counts = session.pseudonymise(
+            record["text"],
+            force_categories=[(s, e, cat) for s, e, cat in record["spans"]],
+        )
+        # ... run bias-detection over `pseudonymised` ...
+    session.record_finding(
+        finding_summary="No significant disparate impact detected.",
+        bias_metrics={"demographic_parity_diff": 0.012, "sample_size": 5000},
+    )
+# On exit: session token map wiped (best-effort secure overwrite + reference
+# drop), bias_session_end entry logged with wipe_confirmed=True.
+```
+
+### JavaScript
+
+```javascript
+const { Shield, ShieldConfig, BiasDetectionSession } = require('cloakllm');
+
+const shield = new Shield(new ShieldConfig({
+  complianceMode: 'eu_ai_act_article12',
+}));
+
+await BiasDetectionSession.run({
+  shield,
+  purpose: 'Pre-deployment fairness audit of credit-scoring model v3.2',
+  necessityJustification: 'Synthetic data evaluated and rejected. See report XYZ-2026-04.',
+  categoriesAllowed: ['RACE', 'ETHNICITY', 'RELIGION'],
+  maxLifetimeSeconds: 86400,
+}, (session) => {
+  for (const record of protectedDataset) {
+    const [pseudonymised, counts] = session.pseudonymise(record.text, {
+      forceCategories: record.spans, // [[start, end, category], ...]
+    });
+    // ...
+  }
+  session.recordFinding({
+    findingSummary: 'No significant disparate impact detected.',
+    biasMetrics: { demographic_parity_diff: 0.012, sample_size: 5000 },
+  });
+});
+```
+
+### Required fields
+
+| Field | Required | Purpose |
+|---|---|---|
+| `purpose` | yes | Free-text purpose (≤ 500 chars). Logged to the audit chain. Must not contain PII (the MCP layer additionally applies a PII-pattern scan before reaching the session). |
+| `necessity_justification` | yes | ≤ 2000 chars. Article 4a safeguard #1 — recorded reason why synthetic / anonymised data is insufficient. |
+| `categories_allowed` | yes | Non-empty subset of `SPECIAL_CATEGORY_CATEGORIES`. Out-of-scope categories at pseudonymise time raise `BiasDetectionScopeError`. |
+| `max_lifetime_seconds` | yes | 1 .. 604800 (7 days). No default — Article 4a safeguard #5 forces the operator to think about deletion timing. |
+
+### Errors
+
+| Exception | When |
+|---|---|
+| `BiasDetectionError` | Base class for all four. Inherits from `RuntimeError`. |
+| `BiasDetectionScopeError` | `pseudonymise()` called with a category not in `categories_allowed`. State unchanged: no token map mutation, no audit entry. |
+| `BiasDetectionTimeoutError` | Operation attempted after `max_lifetime_seconds` elapsed. The session is force-ended and wiped BEFORE the error is raised. |
+| `BiasDetectionStateError` | Operation on a session that is closed, or before `__enter__` / `.start()`. |
+
+### Audit-chain shape
+
+Each operation produces one entry, all part of the existing Article 12 hash chain:
+
+| event_type | bias_context fields |
+|---|---|
+| `bias_session_start` | session_id, purpose, necessity_justification, categories_allowed, max_lifetime_seconds |
+| `bias_pseudonymise` | session_id, entity_count, categories_used |
+| `bias_finding` | session_id, finding_summary (≤ 500 chars), bias_metrics (numeric dict, B3-validated) |
+| `bias_session_end` | session_id, exit_reason (clean/error/timeout/evicted), wipe_confirmed, entries_processed, duration_seconds |
+
+When the Shield is in `compliance_mode="eu_ai_act_article12"`, bias events get `EU_AI_Act_Art_4a` appended to `article_ref` — same chain satisfies both articles. All four entries pass the always-on B3 schema validator (no source PII anywhere).
+
+### Post-deletion forensics — by design
+
+After `bias_session_end` the in-memory token map is wiped. The audit chain retains entry counts, categories, timing, and finding summaries but **cannot be used to reconstruct source values from tokens**. This is the Article 4a safeguard #5 guarantee, not a forensics gap.
+
+### MCP
+
+Three new MCP tools (cloakllm-mcp 0.7.0+): `bias_detection_session_start`, `bias_pseudonymise`, `bias_detection_session_end`. The MCP layer adds a PII-pattern scan on `purpose` / `necessity_justification` / `finding_summary` before they reach the session, so PII-containing values are rejected with `{"error": "..."}` rather than reaching the audit chain.
+
+See [COMPLIANCE.md § Article 4a](COMPLIANCE.md) for the full safeguard mapping table.
 
 ---
 
