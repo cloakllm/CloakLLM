@@ -141,6 +141,38 @@ After `bias_session_end` the in-memory token map is wiped. The audit chain retai
 
 ---
 
+## Mapping to External Compliance Schemas (v0.7.1+)
+
+CloakLLM's audit-entry shape was designed for the Article 12 / GDPR Art. 9 combination, but several fields map cleanly onto third-party compliance-event schemas. The table below covers `canonical_log_event` v0.2 (the most commonly referenced external schema for EU AI Act evidence-event reconciliation); the same pattern applies to similar schemas.
+
+| CloakLLM field | External field | Notes |
+|---|---|---|
+| `timestamp` (ISO 8601 UTC, μs precision) | `timestamp_iso8601` | Direct equivalence. CloakLLM captures at write boundary, not at log-ship time. |
+| `prev_hash` / `entry_hash` (SHA-256) | `evidence_chain_predecessor_hash` | Direct equivalence. The CloakLLM chain links each entry to the previous one via prev_hash; the recipient SDK consuming the equivalent field can rely on the same tamper-evidence semantics. |
+| `prompt_hash` (SHA-256 of pre-redaction payload) | `event_payload_hash` | Direct equivalence. Both define "hash of the full payload before PII redaction, for immutability proof without PII replay." |
+| `decision_id` (ULID, v0.7.1+) | `decision_id` | Direct equivalence. Per-inference audit anchor; all audit entries for one user-facing AI decision share the same ID. Caller-supplied IDs accepted from upstream decision-tracking systems. |
+| `system_version_pin` (composed, v0.7.1+) | `system_version_pin` | Direct equivalence. Composed at write time as `<model>@<deployment_version>/<instruction_version>` from `ShieldConfig.deployment_version` + `ShieldConfig.instruction_version`. Null if any component is missing -- no partial pins. |
+| `article_ref` (list of articles, v0.7.0+) | `evidence_events_logged` (inverse) | **CloakLLM ships event-side article reference (`article_ref` list per entry) rather than article-side event grouping (`evidence_events_logged` per article). Both shapes describe the same article-event relation; the event-side shape is integration-friendlier for streaming audit pipelines because it doesn't require materializing per-article rollups before write.** |
+| `entity_count`, `categories`, `entity_details` (per-entity PII metadata, no raw values), `certificate_hash` (Ed25519), `bias_context` (Article 4a) | (extension point) | CloakLLM-specific fields that don't have an obvious home in `canonical_log_event` today. These are the PII-layer predicate slot for the Article 26 deployer cluster; SDKs consuming both schemas should carry them through as opaque metadata. |
+
+### Event-type vocabulary (v0.7.1+)
+
+CloakLLM audit entries use the following `event_type` values today. These are stable identifiers across SDK versions; new event types are additive. **The bare-noun naming (`sanitize`, not `cloakllm.sanitize.completed`) is intentional and load-bearing for backward compatibility — every audit chain ever written by CloakLLM uses these strings as part of the canonical-JSON hash input. A dotted-namespace migration would require a `compliance_version` bump and is scheduled for v0.9.0 at earliest.**
+
+| `event_type` | Emitted by | Carries |
+|---|---|---|
+| `sanitize` | `Shield.sanitize()` | entity_count, categories, tokens_used, entity_details, prompt_hash, sanitized_hash, certificate_hash, decision_id, system_version_pin |
+| `sanitize_batch` | `Shield.sanitize_batch()` | same as sanitize + per-text hashes in metadata.prompt_hashes / sanitized_hashes |
+| `desanitize` | `Shield.desanitize()` | present-subset filter (H3); prompt_hash == sanitized_hash (G2 oracle close) |
+| `desanitize_batch` | `Shield.desanitize_batch()` | union-of-present-tokens across the batch |
+| `bias_session_start` | `BiasDetectionSession.__enter__` / `.start()` | bias_context.{session_id, purpose, necessity_justification, categories_allowed, max_lifetime_seconds} |
+| `bias_pseudonymise` | `BiasDetectionSession.pseudonymise()` | bias_context.{session_id, entity_count, categories_used} |
+| `bias_finding` | `BiasDetectionSession.record_finding()` | bias_context.{session_id, finding_summary, bias_metrics} |
+| `bias_session_end` | `BiasDetectionSession.__exit__` / `.end()` | bias_context.{session_id, exit_reason, wipe_confirmed, entries_processed, duration_seconds} |
+| `key_rotation_event` | `Shield.__init__` when KeyProvider rotation observed | metadata.{key_provider, key_version}, key_id |
+
+---
+
 ## Code Invariants
 
 The following invariants are enforced in code (not merely documented). Any violation is a regression.
