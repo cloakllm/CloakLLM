@@ -40,6 +40,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Pluggable Detection Backends](#pluggable-detection-backends)
 - [Article 12 Compliance Mode](#article-12-compliance-mode)
 - [Article 4a Bias Detection Workflow](#article-4a-bias-detection-workflow-v070) **(v0.7.0)**
+- [Compliance Reporting](#compliance-reporting-v080) **(v0.8.0)**
 - [Enterprise Key Management](#enterprise-key-management)
 - [Disabling / Re-enabling](#disabling--re-enabling)
 
@@ -1953,6 +1954,83 @@ After `bias_session_end` the in-memory token map is wiped. The audit chain retai
 Three new MCP tools (cloakllm-mcp 0.7.0+): `bias_detection_session_start`, `bias_pseudonymise`, `bias_detection_session_end`. The MCP layer adds a PII-pattern scan on `purpose` / `necessity_justification` / `finding_summary` before they reach the session, so PII-containing values are rejected with `{"error": "..."}` rather than reaching the audit chain.
 
 See [COMPLIANCE.md § Article 4a](COMPLIANCE.md) for the full safeguard mapping table.
+
+---
+
+## Compliance Reporting (v0.8.0+)
+
+**The artifact you hand to an EU AI Act auditor.** v0.6.0 shipped Article 12 Compliance Mode. v0.7.0 added Article 4a bias-detection. v0.8.0 turns those into a regulator-facing report.
+
+One call reduces the audit chain to a per-article rollup -- Article 12 evidence event count, Article 4a `bias_sessions` with `wipe_confirmed_pct`, Article 19 hash-chain verdict -- reconciles cross-article events via `decision_id`, and emits a COMPLIANT / NON_COMPLIANT verdict with human-readable reasons.
+
+### Python
+
+```python
+from cloakllm import Shield, ShieldConfig
+
+shield = Shield(config=ShieldConfig(
+    log_dir="./cloakllm_audit",
+    compliance_mode="eu_ai_act_article12",
+))
+
+# JSON (default) -- canonical structured contract for downstream tooling.
+report = shield.generate_compliance_report(
+    period_from="2026-04-01T00:00:00+00:00",
+    period_to="2026-06-30T23:59:59+00:00",
+)
+print(report["verdict"])  # COMPLIANT or NON_COMPLIANT
+for art, stats in report["per_article"].items():
+    print(art, stats["evidence_event_count"])
+
+# Markdown -- DPO / compliance officer narrative.
+md = shield.generate_compliance_report(format="markdown")
+
+# PDF -- regulator-ready. Requires: pip install cloakllm[reporting]
+shield.generate_compliance_report(format="pdf", out_path="2026-Q2.pdf")
+```
+
+### JavaScript
+
+```javascript
+const cloakllm = require('cloakllm');
+const shield = new cloakllm.Shield(new cloakllm.ShieldConfig({
+  logDir: './cloakllm_audit',
+  complianceMode: 'eu_ai_act_article12',
+}));
+
+const report = shield.generateComplianceReport({
+  periodFrom: '2026-04-01T00:00:00+00:00',
+  periodTo: '2026-06-30T23:59:59+00:00',
+});
+console.log(report.verdict);
+
+const md = shield.generateComplianceReport({ format: 'markdown' });
+// PDF is Python-only (reportlab is a Python-native lib).
+```
+
+### CLI
+
+```bash
+# Exit 0 on COMPLIANT, exit 1 on NON_COMPLIANT -- CI-friendly.
+cloakllm compliance-report ./cloakllm_audit \
+  --from 2026-04-01T00:00:00+00:00 \
+  --to   2026-06-30T23:59:59+00:00 \
+  --format markdown
+```
+
+### MCP
+
+The `generate_compliance_report` MCP tool (11th) exposes the same engine to Claude Desktop / Cursor. PDF is rejected at the MCP layer with a helpful error; use the CLI for PDF output.
+
+### Output schema
+
+The JSON contract is published as JSON Schema 2020-12 at `examples/compliance_report_schema.json`. Top-level keys: `report_metadata`, `period`, `articles_in_scope`, `chain_integrity` (verdict / total_entries / anomalies), `per_article` (per-article rollup with optional `bias_sessions` / `findings_recorded` / `wipe_confirmed_pct` ONLY on Article 4a), `attestation` (entries_with_certificates / signatures_valid / key_ids + v0.8.1 forward-compat `provenance_summary` slot), `decisions` (when `include_decisions=True`), `verdict`, `verdict_reasons`.
+
+A canonical sample report ships at `examples/compliance_report_sample.{json,md,pdf}`.
+
+### Correctness invariant
+
+`bias_sessions` / `findings_recorded` / `wipe_confirmed_pct` attach **only** to `EU_AI_Act_Art_4a`. Although bias events claim `article_ref=[Art_12, Art_19, Art_4a]` (because Article 4a builds on Article 12), an auditor reading the Article 12 section must not see bias-specific stats there. Tested in both SDKs.
 
 ---
 
