@@ -41,6 +41,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Article 12 Compliance Mode](#article-12-compliance-mode)
 - [Article 4a Bias Detection Workflow](#article-4a-bias-detection-workflow-v070) **(v0.7.0)**
 - [Compliance Reporting](#compliance-reporting-v080) **(v0.8.0)**
+- [Externally-Verifiable Key Provenance](#externally-verifiable-key-provenance-v081) **(v0.8.1+)**
 - [Enterprise Key Management](#enterprise-key-management)
 - [Disabling / Re-enabling](#disabling--re-enabling)
 
@@ -2031,6 +2032,94 @@ A canonical sample report ships at `examples/compliance_report_sample.{json,md,p
 ### Correctness invariant
 
 `bias_sessions` / `findings_recorded` / `wipe_confirmed_pct` attach **only** to `EU_AI_Act_Art_4a`. Although bias events claim `article_ref=[Art_12, Art_19, Art_4a]` (because Article 4a builds on Article 12), an auditor reading the Article 12 section must not see bias-specific stats there. Tested in both SDKs.
+
+---
+
+## Externally-Verifiable Key Provenance (v0.8.1+)
+
+**The trust-anchor closer.** v0.8.0 lets your compliance officer generate Article 12 reports. v0.8.1+ lets an external auditor verify those reports' Ed25519 signatures **without trusting CloakLLM, your deployer, or any out-of-band claim about which keys are real**.
+
+### Install
+
+```bash
+# Python — KeyManifest signing needs an Ed25519 backend.
+pip install cloakllm[attestation]
+
+# MCP — auto-pulls the extras transitively (v0.8.2+).
+pip install cloakllm-mcp
+
+# JavaScript — Node's built-in crypto covers Ed25519; nothing extra needed.
+npm install cloakllm
+```
+
+**v0.8.2+ fail-hard guard:** if you set `ShieldConfig.deployer_id` without an Ed25519 backend installed, `Shield.__init__` raises `RuntimeError` pointing at the install hint. Silent degradation is a footgun the project explicitly rejects -- the deployer who opts in to KeyManifest must get working KeyManifest, not silent skipping.
+
+### Minimal Python example
+
+```python
+from cloakllm import (
+    Shield, ShieldConfig, DeploymentKeyPair,
+    derive_key_manifest, verify_key_provenance,
+)
+
+# 1. Generate a signing key (one-time deployment setup)
+kp = DeploymentKeyPair.generate()
+kp.save("./prod-key.json")
+
+# 2. Configure Shield with deployer_id -- triggers key_registered emission
+shield = Shield(config=ShieldConfig(
+    audit_enabled=True,
+    log_dir="./cloakllm_audit",
+    compliance_mode="eu_ai_act_article12",
+    attestation_key=kp,
+    deployer_id="acme-corp/ai-platform-team",
+    key_valid_from="2026-01-01T00:00:00+00:00",
+    key_valid_until="2027-01-01T00:00:00+00:00",
+))
+
+# 3. Sanitize as normal — every cert is now Ed25519-signed AND auditors
+#    can verify provenance against the key_registered manifest in the chain.
+sanitized, tm = shield.sanitize("Email alice@example.com about the deal")
+
+# 4. Compliance report includes the v0.8.1 provenance_summary
+report = shield.generate_compliance_report()
+print(report["attestation"]["provenance_summary"])
+# -> {'manifests_found': 1, 'manifests_valid': 1,
+#     'within_validity_window_pct': 100,
+#     'root_signature_status_distribution': {'NOT_REQUESTED': 1, ...}}
+```
+
+### Offline ceremony (root-signed manifest)
+
+For high-stakes deployments, sign the manifest with a SEPARATE offline root key (the chain-of-trust anchor). The runtime CloakLLM process never holds the root key:
+
+```bash
+cloakllm key-manifest generate \
+  --signing-key-path ./prod-key.json \
+  --deployer-id "acme-corp/ai-platform-team" \
+  --valid-until "2027-05-31T00:00:00+00:00" \
+  --root-key /secure/usb/root-key-2026.json \
+  --root-key-id "acme-root-2026" \
+  --out /publish/manifest.json
+```
+
+### Auditor verification
+
+```bash
+# Exit 0 = VERIFIED, exit 1 = any check failed. CI-friendly.
+cloakllm key-manifest verify \
+  --manifest /publish/manifest.json \
+  --certificate ./cert.json \
+  --root-public-key /auditor/acme-root-2026.pub
+```
+
+### What KeyManifest does NOT prove
+
+- **Trusted timestamping** (attacker with key + clock control can backdate). Out of scope; v1.0 candidate via RFC 3161 / sigstore Rekor.
+- **Revocation** beyond `valid_until`. v0.9.0 candidate.
+- **Anything outside the deployer's root-key custody** -- if the deployer loses their root key, the chain-of-trust anchor is gone.
+
+See [COMPLIANCE.md § Externally-Verifiable Key Provenance](COMPLIANCE.md) for the full threat-model table, the field reference, and sample JSON.
 
 ---
 

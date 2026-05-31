@@ -176,6 +176,13 @@ CloakLLM audit entries use the following `event_type` values today. These are st
 
 ## Externally-Verifiable Key Provenance (v0.8.1+)
 
+> **Install requirement (v0.8.2+):** KeyManifest signing requires an Ed25519 backend. Install via the extras group:
+> ```bash
+> pip install cloakllm[attestation]
+> # (equivalent: pip install pynacl  OR  pip install cryptography)
+> ```
+> If you set `deployer_id` on `ShieldConfig` without an Ed25519 backend installed, `Shield.__init__` raises a clear `RuntimeError` pointing at the install hint. `cloakllm-mcp>=0.8.2` pulls `cloakllm[attestation]` automatically, so MCP deployers don't need a manual extras step. JS deployers are unaffected (Node's built-in `crypto` covers Ed25519 with zero deps).
+
 **The trust-anchor problem.** Pre-v0.8.1, the Ed25519 attestation surface proves exactly one thing: *"the holder of private key K signed this certificate."* It does NOT prove who holds K, when K was authorized, whether K is still valid, or whether K has been revoked. An external auditor receiving a CloakLLM audit chain has to ask the deployer "is this key K really yours, valid on date X, still in use today?" and trust the answer. Three out-of-band trust assumptions per verification — exactly the friction that makes external audits expensive and unreliable.
 
 `KeyManifest` collapses these into one mechanically-verifiable artifact.
