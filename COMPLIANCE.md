@@ -170,6 +170,167 @@ CloakLLM audit entries use the following `event_type` values today. These are st
 | `bias_finding` | `BiasDetectionSession.record_finding()` | bias_context.{session_id, finding_summary, bias_metrics} |
 | `bias_session_end` | `BiasDetectionSession.__exit__` / `.end()` | bias_context.{session_id, exit_reason, wipe_confirmed, entries_processed, duration_seconds} |
 | `key_rotation_event` | `Shield.__init__` when KeyProvider rotation observed | metadata.{key_provider, key_version}, key_id |
+| `key_registered` | `Shield.__init__` when `deployer_id` configured (v0.8.1+) | `key_manifest` (full inline KeyManifest), key_id. See "Externally-Verifiable Key Provenance" below. |
+
+---
+
+## Externally-Verifiable Key Provenance (v0.8.1+)
+
+**The trust-anchor problem.** Pre-v0.8.1, the Ed25519 attestation surface proves exactly one thing: *"the holder of private key K signed this certificate."* It does NOT prove who holds K, when K was authorized, whether K is still valid, or whether K has been revoked. An external auditor receiving a CloakLLM audit chain has to ask the deployer "is this key K really yours, valid on date X, still in use today?" and trust the answer. Three out-of-band trust assumptions per verification — exactly the friction that makes external audits expensive and unreliable.
+
+`KeyManifest` collapses these into one mechanically-verifiable artifact.
+
+### The mechanism
+
+`KeyManifest` binds a signing key to a deployer identity and validity window, optionally signed by a **separate offline root key** (the chain-of-trust anchor). The runtime CloakLLM process never holds the root key — root signing is a one-time offline ceremony.
+
+```text
+                 [ Offline root key (HSM / ceremony) ]
+                              |
+                              | one-time signing of manifest_hash
+                              v
+[ KeyManifest ] -> { key_id, public_key, deployer_id,
+                     valid_from, valid_until, purpose,
+                     manifest_hash, root_signature }
+       |
+       | published alongside the deployment
+       v
+[ External auditor verifies:
+    1. cert.signature against manifest.public_key
+    2. cert.key_id == manifest.key_id
+    3. cert.timestamp in [valid_from, valid_until]
+    4. manifest.root_signature verified by deployer's root public key
+    5. manifest_hash matches recompute of fields ]
+```
+
+### What KeyManifest DOES prove
+
+| Property | Without KeyManifest | With KeyManifest (root-signed) |
+|---|---|---|
+| Cert was signed by a key the deployer authorized | trust the deployer | mechanically verifiable |
+| Key was valid at cert.timestamp | trust the deployer | mechanically verifiable |
+| Manifest fields haven't been forged after-the-fact | n/a | the root key (offline, not in runtime) signed the manifest_hash; an attacker compromising the runtime cannot retroactively mint manifests |
+
+### What KeyManifest does NOT prove (the boundary)
+
+| Out of scope | Why | Path forward |
+|---|---|---|
+| **Trusted timestamping** — an attacker with key + clock control can backdate audit entries | KeyManifest binds key to identity + window; it does not anchor the wall clock | v1.0 candidate: RFC 3161 TSA or sigstore Rekor integration |
+| **Revocation** — a single revoked key blacklist | v0.8.1 ships `valid_until` (typical 1-year horizon) but not OCSP-class revocation lists | v0.9.0 or v1.0 — revocation list as a separately-published artifact |
+| **Network-published manifest discovery** | KM-3 carries the manifest inline in the `key_registered` audit event (self-contained chain) | If chain size becomes an issue at very-large-scale, `.well-known` URL discovery is a v1.0 alternative |
+| **KMS-native key metadata format conversion** | KMS providers (AWS/GCP/Azure/Vault) don't ship until v0.10.x | `derive_key_manifest()` accepts an optional KMS provider reference now; the v0.10.x integration is a pure additive change |
+
+### Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `key_id` | str | yes | CloakLLM key_id (first 16 hex chars of SHA-256(public_key)) |
+| `public_key` | str | yes | Base64 Ed25519 public key (32 bytes raw → 44 chars b64) |
+| `deployer_id` | str | yes | Free-form deployer identifier. 1..256 chars, no NUL bytes |
+| `valid_from` | str (ISO 8601 UTC) | yes | Window start. Microsecond precision |
+| `valid_until` | str OR null | no | Window end. Null = open-ended (less-secure default; compliance-grade deployers SHOULD set 1-year horizon) |
+| `purpose` | str | yes | Must be `"cloakllm-audit-attestation"`. Whitelist leaves room for v2 purposes |
+| `manifest_version` | str | yes | `"1.0"` in v0.8.1 |
+| `manifest_hash` | str | yes | SHA-256 hex of canonical-JSON of all fields except itself + `root_signature` |
+| `root_signature` | str OR null | no | Base64 Ed25519 sig over `manifest_hash` by the offline root key. **Load-bearing when present**; null = self-published metadata, not the security boundary |
+| `root_key_id` | str OR null | no | Identifier of the root key (auditor uses to look up root public key out-of-band) |
+
+### Sample manifest (root-signed)
+
+```json
+{
+  "key_id": "4704474d27c4b9bc",
+  "public_key": "Bz4CGDV39PewTTD0bTiwuIs7PsblbNtfDDgH16sKo0E=",
+  "deployer_id": "acme-corp/ai-platform-team",
+  "valid_from": "2026-05-31T00:00:00+00:00",
+  "valid_until": "2027-05-31T00:00:00+00:00",
+  "purpose": "cloakllm-audit-attestation",
+  "manifest_version": "1.0",
+  "manifest_hash": "00c7ddef1e2b9d640a4b9195a36d09d72bc1d26130424f041bff2957ca7a7611",
+  "root_signature": "MEUCIQD8wK4...",
+  "root_key_id": "acme-root-2026"
+}
+```
+
+### Sample ProvenanceReport (auditor output)
+
+`cloakllm key-manifest verify --format json` produces:
+
+```json
+{
+  "overall_valid": true,
+  "provenance_status": "VERIFIED",
+  "signature_valid": true,
+  "key_id_matches": true,
+  "within_validity_window": true,
+  "root_signature_status": "VALID",
+  "manifest_hash_consistent": true,
+  "checked_at": "2026-05-31T10:00:00+00:00",
+  "notes": []
+}
+```
+
+`root_signature_status` is one of: `VALID` | `INVALID` | `NOT_REQUESTED` (manifest has no root_signature, self-published) | `UNVERIFIED_NO_KEY` (manifest claims a root signature but caller didn't supply the root public key).
+
+### Operator workflow
+
+1. **Generate the signing key** (one-time, when the deployment is set up):
+   ```bash
+   cloakllm-generate-key --out ./prod-key.json   # existing v0.6.x flow
+   ```
+2. **Offline ceremony**: generate the manifest with root signing on an air-gapped machine.
+   ```bash
+   cloakllm key-manifest generate \
+     --signing-key-path ./prod-key.json \
+     --deployer-id "acme-corp/ai-platform-team" \
+     --valid-until "2027-05-31T00:00:00+00:00" \
+     --root-key /secure/usb/root-key-2026.json \
+     --root-key-id "acme-root-2026" \
+     --out /publish/manifest.json
+   ```
+   The CloakLLM runtime never sees `--root-key`. The manifest is generated once and published as a static artifact alongside the deployment.
+3. **Runtime emission**: configure `deployer_id` on Shield (or via `CLOAKLLM_DEPLOYER_ID` env). Shield emits a `key_registered` audit event on first init binding the key. Concurrent process startups are safe — duplicate `key_registered` events with identical content coexist; the verifier dedups by `manifest_hash`.
+4. **Auditor verification**:
+   ```bash
+   cloakllm key-manifest verify \
+     --manifest /publish/manifest.json \
+     --certificate ./cert.json \
+     --root-public-key /auditor/acme-root-2026.pub
+   # exit 0 = VERIFIED, exit 1 = any check failed
+   ```
+
+### Aggregation in compliance reports (v0.8.1 KM-9)
+
+`Shield.generate_compliance_report()` (v0.8.0) reserved an `attestation.provenance_summary` slot for v0.8.1 to fill. With v0.8.1 in place:
+
+```json
+"attestation": {
+  "schema_version": "1.0",
+  "entries_with_certificates": 142,
+  "signatures_valid": 142,
+  "key_ids": ["4704474d27c4b9bc"],
+  "provenance_summary": {
+    "manifests_found": 1,
+    "manifests_valid": 1,
+    "within_validity_window_pct": 100,
+    "root_signature_status_distribution": {
+      "VALID": 1, "INVALID": 0,
+      "NOT_REQUESTED": 0, "UNVERIFIED_NO_KEY": 0
+    }
+  }
+}
+```
+
+Pre-v0.8.1 chains (no `key_registered` events) keep the slot all-null — fully back-compatible with v0.8.0 reports.
+
+### Threat model summary
+
+| Attacker capability | KeyManifest defense | Result |
+|---|---|---|
+| Compromise the runtime; sign fresh entries | active key is in scope; root key is not | attacker can sign current entries with active key but cannot mint new manifests backdated to before the compromise (root_signature would be invalid) |
+| Substitute a different KeyManifest at audit time | manifest_hash + root_signature | recomputed hash mismatches; root signature invalid; `manifest_hash_consistent=False` |
+| Backdate an audit entry while holding the active key | `valid_from` of legitimate manifest is recorded; backdated cert outside the window | `within_validity_window=False` |
+| Backdate an audit entry while holding active key AND root key | KeyManifest does NOT defend this case | scope of trusted-timestamping (out of scope; v1.0 candidate) |
 
 ---
 
