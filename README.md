@@ -28,9 +28,9 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 
 | SDK | Version | Install | Docs |
 |-----|---------|---------|------|
-| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.8.0 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
-| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.8.0 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
-| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.8.0 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
+| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.8.1 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
+| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.8.1 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
+| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.8.1 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
 
 ## What it does
 
@@ -107,11 +107,11 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-This exposes **eleven tools** to Claude: **sanitize**, **sanitize_batch**, **desanitize**, **desanitize_batch**, **analyze**, **analyze_batch**, **analyze_context_risk** (added v0.5.0), **bias_detection_session_start** / **bias_pseudonymise** / **bias_detection_session_end** (added v0.7.0 for the EU AI Act Article 4a workflow), and **generate_compliance_report** (added v0.8.0 -- end-to-end EU AI Act compliance reports in JSON / Markdown).
+This exposes **twelve tools** to Claude: **sanitize**, **sanitize_batch**, **desanitize**, **desanitize_batch**, **analyze**, **analyze_batch**, **analyze_context_risk** (added v0.5.0), **bias_detection_session_start** / **bias_pseudonymise** / **bias_detection_session_end** (added v0.7.0 for the EU AI Act Article 4a workflow), **generate_compliance_report** (added v0.8.0 -- end-to-end EU AI Act compliance reports in JSON / Markdown), and **get_key_manifest** (added v0.8.1 -- externally-verifiable key provenance).
 
 ## Roadmap
 
-Shipped in v0.8.0: end-to-end **compliance reporting API** (`Shield.generate_compliance_report()` Py + `shield.generateComplianceReport()` JS + new `generate_compliance_report` MCP tool + `cloakllm compliance-report` CLI). Pairs with v0.6.0 Article 12 Compliance Mode and v0.7.0 Article 4a bias-detection to produce one regulator-ready audit report per inference period (JSON / Markdown / PDF). Upcoming: v0.8.1 externally-verifiable KeyManifest (auditor verifies signatures without trusting CloakLLM) and KMS provider rebuild -- AWS / GCP / Azure / Vault. Full EU AI Act suite (sandbox-ready config, partner integrations, SME tier) in v1.0.
+Shipped in v0.8.1: **externally-verifiable KeyManifest** (`KeyManifest` + `verify_key_provenance()` + `cloakllm key-manifest verify` CLI + `get_key_manifest` MCP tool). Closes the trust loop on v0.8.0 reports: an EU AI Office auditor can now verify CloakLLM audit-chain signatures **without trusting CloakLLM, your deployer, or anyone else's word about which keys are real**. The audit chain stands on its own. Upcoming: KMS provider rebuild -- AWS / GCP / Azure / Vault. Full EU AI Act suite (sandbox-ready config, partner integrations, SME tier) in v1.0.
 
 ## License
 
