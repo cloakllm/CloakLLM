@@ -171,6 +171,7 @@ CloakLLM audit entries use the following `event_type` values today. These are st
 | `bias_session_end` | `BiasDetectionSession.__exit__` / `.end()` | bias_context.{session_id, exit_reason, wipe_confirmed, entries_processed, duration_seconds} |
 | `key_rotation_event` | `Shield.__init__` when KeyProvider rotation observed | metadata.{key_provider, key_version}, key_id |
 | `key_registered` | `Shield.__init__` when `deployer_id` configured (v0.8.1+) | `key_manifest` (full inline KeyManifest), key_id. See "Externally-Verifiable Key Provenance" below. |
+| `key_revoked` | `Shield.record_key_revocation()` (v0.9.0+) | metadata.{revoked_at, reason, advisory: true}, key_id. ADVISORY only -- the out-of-band root-signed RevocationList is the security boundary. See "Key Revocation" below. |
 
 ---
 
@@ -223,7 +224,7 @@ CloakLLM audit entries use the following `event_type` values today. These are st
 | Out of scope | Why | Path forward |
 |---|---|---|
 | **Trusted timestamping** — an attacker with key + clock control can backdate audit entries | KeyManifest binds key to identity + window; it does not anchor the wall clock | v1.0 candidate: RFC 3161 TSA or sigstore Rekor integration |
-| **Revocation** — a single revoked key blacklist | v0.8.1 ships `valid_until` (typical 1-year horizon) but not OCSP-class revocation lists | v0.9.0 or v1.0 — revocation list as a separately-published artifact |
+| ~~**Revocation**~~ | **SHIPPED in v0.9.0** — root-signed `RevocationList` as a separately-published out-of-band artifact. See "Key Revocation (v0.9.0+)" below. | done |
 | **Network-published manifest discovery** | KM-3 carries the manifest inline in the `key_registered` audit event (self-contained chain) | If chain size becomes an issue at very-large-scale, `.well-known` URL discovery is a v1.0 alternative |
 | **KMS-native key metadata format conversion** | KMS providers (AWS/GCP/Azure/Vault) don't ship until v0.10.x | `derive_key_manifest()` accepts an optional KMS provider reference now; the v0.10.x integration is a pure additive change |
 
@@ -337,7 +338,70 @@ Pre-v0.8.1 chains (no `key_registered` events) keep the slot all-null — fully 
 | Compromise the runtime; sign fresh entries | active key is in scope; root key is not | attacker can sign current entries with active key but cannot mint new manifests backdated to before the compromise (root_signature would be invalid) |
 | Substitute a different KeyManifest at audit time | manifest_hash + root_signature | recomputed hash mismatches; root signature invalid; `manifest_hash_consistent=False` |
 | Backdate an audit entry while holding the active key | `valid_from` of legitimate manifest is recorded; backdated cert outside the window | `within_validity_window=False` |
-| Backdate an audit entry while holding active key AND root key | KeyManifest does NOT defend this case | scope of trusted-timestamping (out of scope; v1.0 candidate) |
+| Backdate an audit entry while holding active key AND root key | KeyManifest does NOT defend this case | scope of trusted-timestamping (out of scope; v1.0 candidate -- see `SPIKE_timestamping.md` for the RFC 3161 recommendation) |
+
+---
+
+## Key Revocation (v0.9.0+)
+
+> **Install/usage:** ships in the core SDK, no extras needed. `RevocationList` + `derive_revocation_list()` (Py) / `deriveRevocationList()` (JS), `cloakllm key-manifest revoke` CLI, `revocation_list` parameter on `verify_key_provenance()`, `revocation_list_path` on `ShieldConfig` + `generate_compliance_report()`.
+
+**The gap this closes:** `valid_until` (v0.8.1) covers planned rotation, but a compromised key inside its validity window stayed trusted until the window closed. The RevocationList gives a leaked key a **signed, dated tombstone the runtime cannot erase**.
+
+### Why the revocation list is OUT-OF-BAND (the load-bearing design decision)
+
+The v0.8.1 KeyManifest travels INLINE in the audit chain (`key_registered` events) because the chain's hash-links protect it. **That pattern does NOT carry over to revocation:** a compromised runtime controls the chain -- it will simply never write a `key_revoked` event against its own stolen key. So:
+
+| Artifact | Where it lives | Role |
+|---|---|---|
+| `RevocationList` (root-signed) | **Out-of-band** -- published by the deployer, handed to the auditor | **THE security boundary** |
+| `key_revoked` audit events (`Shield.record_key_revocation()`) | Inline in the chain | Advisory only -- honest-deployer timeline visibility in compliance reports. Explicitly NOT the boundary. |
+
+A conflict between the two (inline event missing, list says revoked) is reported as a note, not a failure -- the out-of-band list is authoritative.
+
+### Semantics
+
+- **Permanent:** entries are never removed. Un-revoking is forbidden; rotate to a new key instead. The `revoke` ceremony refuses to re-revoke an already-listed key.
+- **Monotonic:** a fresher list (later `issued_at`) supersedes an older one. The auditor uses the freshest list they're given.
+- **The empty list is meaningful:** deployers publish an empty root-signed list at setup so "nothing revoked as of date X" is a signed claim, not an absence of data.
+- **X.509/OCSP-style cut-over:** certs signed BEFORE `revoked_at` remain valid (`REVOKED_BUT_CERT_PREDATES`); certs at or after fail (`REVOKED`). The compromise window is surgical, not retroactive annihilation.
+- **A bad list is worse than no list:** tampered `list_hash`, wrong `deployer_id`, or failed root signature -> `LIST_INVALID`, which FAILS verification. The auditor must know their input is bad, not silently treat it as "nothing revoked."
+- **Reason codes (closed whitelist):** `compromised` | `superseded` | `ceased_operation` | `unspecified`.
+
+### Runtime guard (the v0.8.2 doctrine applied)
+
+When `ShieldConfig.revocation_list_path` (or `CLOAKLLM_REVOCATION_LIST`) is set, `Shield.__init__` **fail-hards with RuntimeError if its own signing key appears in the list** -- signing with a revoked key is always a mistake. An unreadable/corrupt list also fail-hards: a deployer who configured revocation checking must not run blind.
+
+### Operator workflow
+
+```bash
+# Revoke a key (offline root ceremony -- same root key as the KeyManifest):
+cloakllm key-manifest revoke \
+  --key-id 7e053f5b332c5e40 \
+  --reason compromised \
+  --revoked-at "2026-01-15T00:00:00+00:00" \
+  --deployer-id "acme-corp/ai-platform-team" \
+  --list /publish/revocations.json \
+  --root-key /secure/usb/root-key-2026.json \
+  --root-key-id "acme-root-2026" \
+  --out /publish/revocations.json
+
+# Auditor verifies a cert against manifest + revocation list:
+cloakllm key-manifest verify \
+  --manifest /publish/manifest.json \
+  --certificate ./cert.json \
+  --root-public-key /auditor/acme-root-2026.pub \
+  --revocation-list /publish/revocations.json
+# exit 1 + revocation_status: REVOKED when the cert post-dates revocation
+```
+
+### In compliance reports
+
+`generate_compliance_report(revocation_list_path=...)` (or the `ShieldConfig` default) fills three additive `provenance_summary` fields: `revocation_checked`, `revoked_keys_found`, `certs_after_revocation`. Pre-v0.9.0 reports keep `false`/`null` defaults -- no schema bump.
+
+### legacy_canonical sunset COMPLETED (v0.9.0 LC-1)
+
+`legacy_canonical=True` / `legacyCanonical: true` now raises an actionable error (phase 2 of the sunset announced in v0.7.1). Pre-v0.6.1 chains must be re-archived under a v0.6.1..v0.8.x release. One canonicalizer, one hash semantics, cross-SDK byte-equivalent. The kwarg itself hard-deletes in v1.0.
 
 ---
 

@@ -2115,11 +2115,67 @@ cloakllm key-manifest verify \
 
 ### What KeyManifest does NOT prove
 
-- **Trusted timestamping** (attacker with key + clock control can backdate). Out of scope; v1.0 candidate via RFC 3161 / sigstore Rekor.
-- **Revocation** beyond `valid_until`. v0.9.0 candidate.
+- **Trusted timestamping** (attacker with key + clock control can backdate). Out of scope; v1.0 candidate via RFC 3161 (see `SPIKE_timestamping.md`).
 - **Anything outside the deployer's root-key custody** -- if the deployer loses their root key, the chain-of-trust anchor is gone.
+- ~~Revocation~~ **SHIPPED in v0.9.0** -- see the next section.
 
 See [COMPLIANCE.md § Externally-Verifiable Key Provenance](COMPLIANCE.md) for the full threat-model table, the field reference, and sample JSON.
+
+---
+
+## Key Revocation (v0.9.0+)
+
+**A leaked key gets a signed, dated tombstone the runtime cannot erase.** `valid_until` covers planned rotation; the `RevocationList` covers compromise.
+
+**The one design rule that matters:** the revocation list is OUT-OF-BAND. A compromised runtime controls the audit chain and will never write a `key_revoked` event against its own stolen key -- so the security boundary is a root-signed list published OUTSIDE the attacker's write path. Inline `key_revoked` events exist (`shield.record_key_revocation()`) but are advisory timeline records only.
+
+### Revoke a key (offline root ceremony)
+
+```bash
+cloakllm key-manifest revoke \
+  --key-id 7e053f5b332c5e40 \
+  --reason compromised \
+  --revoked-at "2026-01-15T00:00:00+00:00" \
+  --deployer-id "acme-corp/ai-platform-team" \
+  --list /publish/revocations.json \
+  --root-key /secure/usb/root-key-2026.json \
+  --root-key-id "acme-root-2026" \
+  --out /publish/revocations.json
+```
+
+Entries are permanent (no un-revoking -- rotate instead). The empty root-signed list is itself meaningful: publish one at setup so "nothing revoked as of date X" is a signed claim.
+
+### Auditor verification
+
+```bash
+cloakllm key-manifest verify \
+  --manifest /publish/manifest.json \
+  --certificate ./cert.json \
+  --root-public-key /auditor/acme-root-2026.pub \
+  --revocation-list /publish/revocations.json
+# revocation_status: NOT_REVOKED | REVOKED | REVOKED_BUT_CERT_PREDATES
+#                    | NOT_CHECKED | LIST_INVALID
+# REVOKED and LIST_INVALID fail (exit 1). Certs signed BEFORE revoked_at
+# stay valid (X.509/OCSP semantics).
+```
+
+### Runtime guard + reports
+
+```python
+shield = Shield(config=ShieldConfig(
+    attestation_key=kp,
+    revocation_list_path="/publish/revocations.json",  # or CLOAKLLM_REVOCATION_LIST
+))
+# RuntimeError at init if THIS shield's signing key is in the list --
+# signing with a revoked key is always a mistake (the v0.8.2 doctrine).
+
+report = shield.generate_compliance_report()  # uses the configured list
+print(report["attestation"]["provenance_summary"]["revoked_keys_found"])
+```
+
+### v0.9.0 breaking change: legacy_canonical removed
+
+`verify_audit(legacy_canonical=True)` / `verifyAudit({legacyCanonical: true})` now raises an actionable error (sunset phase 2, announced in v0.7.1). Pre-v0.6.1 archival chains must be re-verified and re-archived under a v0.6.1..v0.8.x release before upgrading.
 
 ---
 
