@@ -28,9 +28,9 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 
 | SDK | Version | Install | Docs |
 |-----|---------|---------|------|
-| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.9.0 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
-| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.9.0 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
-| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.9.0 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
+| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.10.0 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
+| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.10.0 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
+| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.10.0 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
 
 ## What it does
 
@@ -50,6 +50,7 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 - **Pluggable Detection Backends** — `DetectorBackend` base class for custom detection pipelines; swap or extend the default regex→NER→LLM pipeline with your own backends
 - **Article 12 Compliance Mode** — formal EU AI Act compliance profile (`compliance_mode="eu_ai_act_article12"`) adds tamper-detectable compliance fields to every audit entry, plus `compliance_summary()` and structured `verify_audit(output_format="compliance_report")` for auditors. See [COMPLIANCE.md](COMPLIANCE.md).
 - **Article 4a Bias Detection Workflow** *(v0.7.0+)* — `BiasDetectionSession` context-managed API for processing GDPR Article 9 special-category PII (race, ethnicity, religion, political opinion, health/biometric, sexual orientation, trade union, genetic) strictly for AI bias detection and correction. Enforces all six Article 4a safeguards: recorded justification, pseudonymisation, in-memory-only token map, `categories_allowed` scope cap, hard-bounded `max_lifetime_seconds` with auto-wipe on exit, and full audit-chain recording. Builds on Article 12. See [COMPLIANCE.md § Article 4a](COMPLIANCE.md).
+- **Article 50 Content-Labeling Record-Keeping** *(v0.10.0+)* — `Shield.record_content_generation()` writes a `content_generation` audit event proving synthetic content was AI-generated and whether a machine-readable label / deep-fake disclosure was applied — for the EU AI Act Article 50 transparency obligation (applies 2 December 2026). `generate_compliance_report()` gains an Article 50 rollup (label-coverage %, modality breakdown, deep-fake count) so **one report proves Article 12 + 4a + 19 + 50 together**. The content itself never reaches CloakLLM — only a caller-computed hash. Record-keeping lane only; CloakLLM does not embed watermarks (C2PA / SynthID territory). `cloakllm content-log` CLI + `record_content_generation` MCP tool. See [COMPLIANCE.md § Article 50](COMPLIANCE.md).
 - **Enterprise Key Management** *(experimental — disabled in v0.6.1)* — KMS/HSM provider scaffolding (AWS KMS, GCP KMS, Azure Key Vault, HashiCorp Vault) is in place but currently raises `NotImplementedError`. Use `LocalKeyProvider` until v0.7.0.
 - **Security Hardened** — Ollama SSRF prevention, thread-safe operations, ReDoS protection, CLI PII redaction by default
 - **Detection Benchmark** — 108-sample labeled PII corpus with recall/precision/F1 harness, CI-enforced thresholds

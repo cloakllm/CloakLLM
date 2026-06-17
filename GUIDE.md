@@ -40,6 +40,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Pluggable Detection Backends](#pluggable-detection-backends)
 - [Article 12 Compliance Mode](#article-12-compliance-mode)
 - [Article 4a Bias Detection Workflow](#article-4a-bias-detection-workflow-v070) **(v0.7.0)**
+- [Article 50 Content-Labeling Record-Keeping](#article-50-content-labeling-record-keeping-v0100) **(v0.10.0)**
 - [Compliance Reporting](#compliance-reporting-v080) **(v0.8.0)**
 - [Externally-Verifiable Key Provenance](#externally-verifiable-key-provenance-v081) **(v0.8.1+)**
 - [Enterprise Key Management](#enterprise-key-management)
@@ -1958,6 +1959,66 @@ See [COMPLIANCE.md § Article 4a](COMPLIANCE.md) for the full safeguard mapping 
 
 ---
 
+## Article 50 Content-Labeling Record-Keeping (v0.10.0+)
+
+The EU AI Act's **Article 50** transparency obligation (applies **2 December 2026**) requires providers of generative AI to mark synthetic output as machine-readable AI-generated, and deployers to disclose deep-fakes. CloakLLM does **not** embed watermarks or C2PA manifests in your media — that's the C2PA / Adobe / SynthID asset-layer lane. CloakLLM owns the **compliance record-keeping** layer: a tamper-evident, signed, per-generation record that content was AI-produced and whether it was labeled, ready for the auditor who is *already* asking you for Article 12 logs.
+
+The key property: **the generated content never enters CloakLLM.** You hash your own bytes and pass the digest; the audit log holds metadata + a hash, never the asset. The no-PII-in-logs invariant extends here to a no-content-in-logs invariant.
+
+```python
+from cloakllm import Shield, ShieldConfig
+import hashlib
+
+shield = Shield(ShieldConfig(compliance_mode="eu_ai_act_article12"))
+
+# After your model generates an image and you apply (or don't apply) a label:
+image_bytes = open("generated.png", "rb").read()
+shield.record_content_generation(
+    modality="image",                 # text | image | audio | video
+    synthetic=True,
+    labeled=True,                     # was a machine-readable AI-gen label applied?
+    disclosure_method="c2pa",         # c2pa | watermark | metadata | visible_notice | none
+    deepfake=False,                   # Article 50(4) deep-fake disclosure trigger
+    content_hash=hashlib.sha256(image_bytes).hexdigest(),   # you compute it; CloakLLM never sees the bytes
+)
+```
+
+```javascript
+const { Shield, ShieldConfig } = require('cloakllm');
+const crypto = require('crypto');
+
+const shield = new Shield(new ShieldConfig({ complianceMode: 'eu_ai_act_article12' }));
+shield.recordContentGeneration({
+  modality: 'image',
+  synthetic: true,
+  labeled: true,
+  disclosureMethod: 'c2pa',
+  deepfake: false,
+  contentHash: crypto.createHash('sha256').update(imageBytes).digest('hex'),
+});
+```
+
+This writes a `content_generation` audit event with `article_ref=[Art_12, Art_19, Art_50]` — it counts as Article 12 record-keeping evidence **and** Article 50 labeling evidence. `generate_compliance_report()` then rolls it up on the `EU_AI_Act_Art_50` row (`generation_events`, `labeled_events`, `label_coverage_pct`, `deepfake_events`, `modality_distribution`). **Any unlabeled synthetic-content event flips the report to NON_COMPLIANT** (strict in v0.10.0).
+
+The `c2pa_manifest_hash` field is a forward-compat hook: if you later embed a C2PA manifest downstream, record its hash here to bind the two records — the bridge export itself is deferred until a customer running C2PA tooling pulls it.
+
+**CLI summary** (CI-gating — exit 1 if any synthetic content is unlabeled):
+
+```bash
+cloakllm content-log ./cloakllm_audit
+# CloakLLM -- EU AI Act Article 50 content-labeling summary
+# Generation events:   142
+# Labeled events:      140
+# Label coverage:      98.59%
+# Deep-fake events:    3
+# Modality breakdown:  audio=2, image=20, text=120
+# Unlabeled generation events (2): ...
+```
+
+The `record_content_generation` MCP tool (13th) exposes the same to Claude Desktop / Cursor. See [COMPLIANCE.md § Article 50](COMPLIANCE.md) and [SPIKE_content_provenance.md](SPIKE_content_provenance.md) for the reject-asset-watermarking / pursue-record-keeping rationale.
+
+---
+
 ## Compliance Reporting (v0.8.0+)
 
 **The artifact you hand to an EU AI Act auditor.** v0.6.0 shipped Article 12 Compliance Mode. v0.7.0 added Article 4a bias-detection. v0.8.0 turns those into a regulator-facing report.
@@ -2032,6 +2093,8 @@ A canonical sample report ships at `examples/compliance_report_sample.{json,md,p
 ### Correctness invariant
 
 `bias_sessions` / `findings_recorded` / `wipe_confirmed_pct` attach **only** to `EU_AI_Act_Art_4a`. Although bias events claim `article_ref=[Art_12, Art_19, Art_4a]` (because Article 4a builds on Article 12), an auditor reading the Article 12 section must not see bias-specific stats there. Tested in both SDKs.
+
+The same invariant applies to v0.10.0's Article 50 fields: `generation_events` / `labeled_events` / `label_coverage_pct` / `deepfake_events` / `modality_distribution` attach **only** to `EU_AI_Act_Art_50`, never to the Art_12 / Art_19 rows, even though `content_generation` events claim all three. All Article 50 fields are additive (no `schema_version` bump); pre-v0.10.0 reports simply have no Art_50 row.
 
 ---
 
