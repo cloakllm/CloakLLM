@@ -28,9 +28,9 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 
 | SDK | Version | Install | Docs |
 |-----|---------|---------|------|
-| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.11.2 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
-| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.11.2 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
-| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.11.2 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
+| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.11.3 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
+| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.11.3 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
+| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.11.3 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
 
 ## What it does
 
