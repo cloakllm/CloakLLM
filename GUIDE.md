@@ -43,6 +43,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Article 50 Content-Labeling Record-Keeping](#article-50-content-labeling-record-keeping-v0100) **(v0.10.0)**
 - [Compliance Reporting](#compliance-reporting-v080) **(v0.8.0)**
 - [Externally-Verifiable Key Provenance](#externally-verifiable-key-provenance-v081) **(v0.8.1+)**
+- [Trusted Timestamping](#trusted-timestamping-v0110) **(v0.11.0)**
 - [Enterprise Key Management](#enterprise-key-management)
 - [Disabling / Re-enabling](#disabling--re-enabling)
 
@@ -2239,6 +2240,57 @@ print(report["attestation"]["provenance_summary"]["revoked_keys_found"])
 ### v0.9.0 breaking change: legacy_canonical removed
 
 `verify_audit(legacy_canonical=True)` / `verifyAudit({legacyCanonical: true})` now raises an actionable error (sunset phase 2, announced in v0.7.1). Pre-v0.6.1 archival chains must be re-verified and re-archived under a v0.6.1..v0.8.x release before upgrading.
+
+---
+
+## Trusted Timestamping (v0.11.0+)
+
+Your audit chain is tamper-*evident* — anyone editing a past entry breaks the hash chain. But that defends only against edits made *after the fact*. An attacker (or a malicious deployer from day one) who controls both the signing key and the offline root key could fabricate an entire internally-consistent **backdated** history. The only defense is an **external clock they don't control**.
+
+**RFC 3161 trusted timestamping** stamps the chain's latest `entry_hash` at a Time-Stamp Authority (TSA), which signs `"this hash existed at UTC time T"` under its own certificate. By hash-chain induction, one checkpoint proves *every entry before it existed no later than T*. For EU AI Act audiences, an **eIDAS-qualified TSA** (eIDAS Art 42) gives that timestamp legal presumption of accuracy.
+
+CloakLLM does this **checkpoint-level** (not per-entry — one stamp covers everything before it), **opt-in**, and the **TSA only ever receives a hash** (never content or PII).
+
+```python
+from cloakllm import Shield, ShieldConfig
+
+shield = Shield(ShieldConfig(
+    compliance_mode="eu_ai_act_article12",
+    timestamp_authority_url="https://freetsa.org/tsr",   # or an eIDAS-qualified TSA
+    # timestamp_interval_entries=100,   # optional: auto-checkpoint every N entries
+))
+
+# ... run your workload (sanitize/desanitize/record_*) ...
+
+shield.checkpoint()   # stamp the chain's latest entry_hash, append a chain_checkpoint event
+```
+
+```javascript
+const { Shield, ShieldConfig } = require('cloakllm');
+const shield = new Shield(new ShieldConfig({
+  complianceMode: 'eu_ai_act_article12',
+  timestampAuthorityUrl: 'https://freetsa.org/tsr',
+}));
+await shield.checkpoint();   // async (network)
+```
+
+**Offline verification — forever, no network:**
+
+```bash
+cloakllm timestamp now ./cloakllm_audit --tsa-url https://freetsa.org/tsr
+cloakllm timestamp verify ./cloakllm_audit          # checks every checkpoint token offline
+#   seq=12: OK   genTime=2026-07-01T10:00:00+00:00
+#   Earliest provable: 2026-07-01T10:00:00+00:00
+#   [OK] All checkpoints verified.
+```
+
+`generate_compliance_report()` rolls checkpoints into `attestation.provenance_summary` (`timestamped_checkpoints`, `checkpoints_verified`, `earliest_provable_time`, `checkpoint_tsa_distribution`). The report **actually re-verifies** every token (verify-don't-assert) — a checkpoint whose token fails verification makes the report `NON_COMPLIANT`.
+
+- **Python:** `pip install cloakllm[timestamping]` (adds `asn1crypto` + `cryptography`). **JS:** zero runtime deps (built on Node's `crypto`).
+- **Env:** `CLOAKLLM_TSA_URL`, `CLOAKLLM_TSA_INTERVAL`, `CLOAKLLM_TSA_TRUSTED_CERTS` (a PEM of trusted TSA cert(s) to also verify the signer chain — you supply the anchor; CloakLLM never vendors a CA list).
+- **Best-effort:** a TSA outage never blocks or corrupts the audit writer. `record_chain_checkpoint` MCP tool (14th) exposes the same. See [COMPLIANCE.md § Trusted Timestamping](COMPLIANCE.md).
+
+> **Audit status:** trusted timestamping is new in v0.11.0. It has had internal adversarial review (HIGH/MEDIUM findings fixed + regression-guarded) and is validated cross-SDK against real RFC 3161 tokens, but **not yet an independent third-party cryptographic audit**. Its tokens are standard RFC 3161 and verify with OpenSSL independently of CloakLLM, so you are never locked into our implementation. Before leaning a regulatory defence on this feature specifically, commission an independent crypto audit and use an eIDAS-qualified TSA — standard prudence for any compliance crypto, made cheap by CloakLLM being open and self-hosted.
 
 ---
 

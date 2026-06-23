@@ -338,7 +338,18 @@ Pre-v0.8.1 chains (no `key_registered` events) keep the slot all-null — fully 
 | Compromise the runtime; sign fresh entries | active key is in scope; root key is not | attacker can sign current entries with active key but cannot mint new manifests backdated to before the compromise (root_signature would be invalid) |
 | Substitute a different KeyManifest at audit time | manifest_hash + root_signature | recomputed hash mismatches; root signature invalid; `manifest_hash_consistent=False` |
 | Backdate an audit entry while holding the active key | `valid_from` of legitimate manifest is recorded; backdated cert outside the window | `within_validity_window=False` |
-| Backdate an audit entry while holding active key AND root key | KeyManifest does NOT defend this case | scope of trusted-timestamping (out of scope; v1.0 candidate -- see `SPIKE_timestamping.md` for the RFC 3161 recommendation) |
+| Backdate an audit entry while holding active key AND root key | **Closed in v0.11.0 by RFC 3161 trusted timestamping** (an external clock the attacker doesn't control): a `chain_checkpoint` token proves the chain existed no later than the TSA's genTime, so a backdated history cannot produce an earlier valid timestamp. See § Trusted Timestamping below. | `checkpoints_verified` + `earliest_provable_time` in the report; `cloakllm timestamp verify` |
+
+## Trusted Timestamping (v0.11.0+)
+
+KeyManifest binds *which keys are real*; trusted timestamping binds *when the chain existed*. Together they close the backdating gap above.
+
+- **Mechanism:** RFC 3161. `Shield.checkpoint()` submits the chain's latest `entry_hash` to a Time-Stamp Authority; the TSA returns a signed TimeStampToken binding that hash to a UTC `genTime`. The token is stored in a `chain_checkpoint` audit event. **The TSA only ever receives a hash** — no content, no PII.
+- **Checkpoint-level, opt-in:** one stamp covers everything before it by hash-chain induction. No TSA configured -> no timestamping, no network calls.
+- **Offline verification:** `verify_timestamp_token()` / `cloakllm timestamp verify` check the token's CMS signature (reading the digest algorithm from the token — sha256 or sha512), the messageImprint, and (with a supplied trust anchor) the signer-cert chain — forever, without network. The report re-verifies every token (**verify, don't assert**): a checkpoint whose token fails verification makes the report `NON_COMPLIANT`.
+- **TSA selection guidance:** for EU regulatory weight, choose an **eIDAS-qualified** TSA (eIDAS Art 42 gives the timestamp legal presumption of accuracy). Non-qualified TSAs (e.g. `freetsa.org`) are fine for tamper-evidence but carry no legal presumption. For long retention windows, plan **re-stamping** before the TSA certificate expires (the PAdES LTV pattern); and consider re-stamping at a second TSA so a single TSA-key compromise doesn't invalidate your evidence. You supply the trust anchor (`CLOAKLLM_TSA_TRUSTED_CERTS`); CloakLLM never vendors a CA list.
+
+> **Audit status (be aware before you rely on it):** trusted timestamping is new in v0.11.0. It has had internal adversarial review (one HIGH and two MEDIUM findings fixed and regression-guarded before release) and is validated cross-SDK against real RFC 3161 tokens, but it has **not yet had an independent third-party cryptographic audit**. The tokens it produces are standard RFC 3161 and verify with OpenSSL or any conforming verifier — independent of CloakLLM's own code — so you are never locked into trusting our implementation. Before you lean a regulatory defence on this specific feature, the prudent path is an independent crypto audit plus an **eIDAS-qualified TSA**. This is standard prudence for any compliance crypto, not a known defect; CloakLLM being open and self-hosted is what makes that audit cheap to commission.
 
 ---
 

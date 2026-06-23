@@ -28,9 +28,9 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 
 | SDK | Version | Install | Docs |
 |-----|---------|---------|------|
-| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.10.3 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
-| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.10.3 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
-| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.10.1 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
+| [CloakLLM-PY](https://github.com/cloakllm/CloakLLM-PY) | 0.11.0 | `pip install cloakllm` | [Python README](https://github.com/cloakllm/CloakLLM-PY#readme) |
+| [CloakLLM-JS](https://github.com/cloakllm/CloakLLM-JS) | 0.11.0 | `npm install cloakllm` | [JS/TS README](https://github.com/cloakllm/CloakLLM-JS#readme) |
+| [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.11.0 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
 
 ## What it does
 
@@ -51,6 +51,7 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 - **Article 12 Compliance Mode** — formal EU AI Act compliance profile (`compliance_mode="eu_ai_act_article12"`) adds tamper-detectable compliance fields to every audit entry, plus `compliance_summary()` and structured `verify_audit(output_format="compliance_report")` for auditors. See [COMPLIANCE.md](COMPLIANCE.md).
 - **Article 4a Bias Detection Workflow** *(v0.7.0+)* — `BiasDetectionSession` context-managed API for processing GDPR Article 9 special-category PII (race, ethnicity, religion, political opinion, health/biometric, sexual orientation, trade union, genetic) strictly for AI bias detection and correction. Enforces all six Article 4a safeguards: recorded justification, pseudonymisation, in-memory-only token map, `categories_allowed` scope cap, hard-bounded `max_lifetime_seconds` with auto-wipe on exit, and full audit-chain recording. Builds on Article 12. See [COMPLIANCE.md § Article 4a](COMPLIANCE.md).
 - **Article 50 Content-Labeling Record-Keeping** *(v0.10.0+)* — `Shield.record_content_generation()` writes a `content_generation` audit event proving synthetic content was AI-generated and whether a machine-readable label / deep-fake disclosure was applied — for the EU AI Act Article 50 transparency obligation (applies 2 December 2026). `generate_compliance_report()` gains an Article 50 rollup (label-coverage %, modality breakdown, deep-fake count) so **one report proves Article 12 + 4a + 19 + 50 together**. The content itself never reaches CloakLLM — only a caller-computed hash. Record-keeping lane only; CloakLLM does not embed watermarks (C2PA / SynthID territory). `cloakllm content-log` CLI + `record_content_generation` MCP tool. See [COMPLIANCE.md § Article 50](COMPLIANCE.md).
+- **Trusted Timestamping (RFC 3161)** *(v0.11.0+)* — `Shield.checkpoint()` stamps the audit chain's latest hash at an RFC 3161 Time-Stamp Authority, proving *"every entry up to here existed no later than time T"* under an external clock the deployer can't control — the defense against a backdated history. An **eIDAS-qualified TSA** gives the timestamp legal presumption of accuracy in EU audits. Checkpoint-level (one stamp covers everything before it by hash-chain induction), opt-in, fully **offline-verifiable**, and the TSA only ever sees a hash. `cloakllm timestamp now`/`verify` CLI + `record_chain_checkpoint` MCP tool. Optional `[timestamping]` extra (Python); zero-dep (JS). See [COMPLIANCE.md § Trusted Timestamping](COMPLIANCE.md).
 - **Enterprise Key Management** *(experimental — disabled in v0.6.1)* — KMS/HSM provider scaffolding (AWS KMS, GCP KMS, Azure Key Vault, HashiCorp Vault) is in place but currently raises `NotImplementedError`. Use `LocalKeyProvider` until v0.7.0.
 - **Security Hardened** — Ollama SSRF prevention, thread-safe operations, ReDoS protection, CLI PII redaction by default
 - **Detection Benchmark** — 108-sample labeled PII corpus with recall/precision/F1 harness, CI-enforced thresholds
@@ -108,7 +109,7 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-This exposes **thirteen tools** to Claude: **sanitize**, **sanitize_batch**, **desanitize**, **desanitize_batch**, **analyze**, **analyze_batch**, **analyze_context_risk** (added v0.5.0), **bias_detection_session_start** / **bias_pseudonymise** / **bias_detection_session_end** (added v0.7.0 for the EU AI Act Article 4a workflow), **generate_compliance_report** (added v0.8.0 -- end-to-end EU AI Act compliance reports in JSON / Markdown), **get_key_manifest** (added v0.8.1 -- externally-verifiable key provenance), and **record_content_generation** (added v0.10.0 -- Article 50 content-labeling record-keeping).
+This exposes **fourteen tools** to Claude: **sanitize**, **sanitize_batch**, **desanitize**, **desanitize_batch**, **analyze**, **analyze_batch**, **analyze_context_risk** (added v0.5.0), **bias_detection_session_start** / **bias_pseudonymise** / **bias_detection_session_end** (added v0.7.0 for the EU AI Act Article 4a workflow), **generate_compliance_report** (added v0.8.0 -- end-to-end EU AI Act compliance reports in JSON / Markdown), **get_key_manifest** (added v0.8.1 -- externally-verifiable key provenance), and **record_content_generation** (added v0.10.0 -- Article 50 content-labeling record-keeping), and **record_chain_checkpoint** (added v0.11.0 -- RFC 3161 trusted timestamping).
 
 ## Roadmap
 
