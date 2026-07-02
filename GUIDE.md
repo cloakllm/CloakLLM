@@ -464,6 +464,32 @@ Every sanitize/desanitize operation is logged to hash-chained JSONL files:
 
 ---
 
+## EU AI Act Coverage (Honest Matrix)
+
+CloakLLM covers the **record-keeping, evidence, and PII-minimization slice** of the articles below — it is **not** a full conformity solution for the EU AI Act, and coverage of every article is gated on **you verifying PII-detection quality on your own data** (CloakLLM scrubs ~94% of sensitive characters on hard inputs, not 100%). Publishing the limits is deliberate: it's what an auditor needs to see. This same matrix is emitted, machine-readable, in the `coverage` block of every compliance report (schema v1.1+) and is byte-identical across the Python and JS SDKs.
+
+| Article | Status | What CloakLLM provides | Your responsibility |
+|---|---|---|---|
+| **Art 12** (Record-keeping) | partial | Hash-chained, tamper-evident audit logs with zero original PII, one entry per sanitization, independently verifiable (hash chain + optional Ed25519 signatures + RFC 3161 timestamps) via `cloakllm-verifier`. | Verify detection coverage on your data; log every high-risk interaction; set a retention policy; secure log storage/access. |
+| **Art 19** (Automatic logs) | partial | The Art 12 logs, retained append-only and independently verifiable. | Choose the retention duration; guarantee availability + access control. |
+| **Art 4a** (Special-category data for bias) | partial | A pseudonymised special-category workflow (`BiasDetectionSession`) recording bias-audit evidence without persisting original special-category PII. | The bias analysis itself + its statistical validity; the legal basis; which categories are in scope. |
+| **Art 50** (Transparency / content labeling) | record-keeping only | A durable, verifiable log that generated content existed and how it was disclosed (the asset never enters CloakLLM — you pass a content hash). | **Actually label/watermark** the content and disclose it to users — CloakLLM records that you did, it does not label. |
+
+**Out of scope for CloakLLM:** Art 9 (risk management), Art 10 (data governance), Art 13 (transparency to deployers), Art 14 (human oversight), Art 15 (accuracy/robustness/cybersecurity), conformity assessment / CE marking.
+
+### Verify it yourself — `cloakllm-verifier`
+
+An auditor doesn't have to trust CloakLLM's code. The standalone `cloakllm-verifier` (Python: `pip install cloakllm-verifier`; JS: `npm install cloakllm-verifier`) re-checks every artifact — hash chain, RFC 3161 timestamps, KeyManifest provenance + revocation, and a compliance report — **without** the PII-detection stack:
+
+```bash
+cloakllm-verify all    ./cloakllm_audit            # hash chain + timestamps, one exit code
+cloakllm-verify report report.json ./cloakllm_audit # reject a report that claims more than the log proves
+```
+
+It reuses CloakLLM's own verification code (single source of truth — no drift) but installs only the crypto dependencies. Exit `0` = verified, `1` = failed.
+
+---
+
 ## Configuration Reference
 
 ### Python ShieldConfig
