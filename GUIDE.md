@@ -435,9 +435,31 @@ CloakLLM uses a multi-pass detection pipeline to find PII before it reaches an L
 
 1. **Regex** (both SDKs) — High-precision pattern matching for structured data: emails, SSNs, credit cards, phone numbers, IP addresses, API keys, AWS keys, JWTs, IBANs.
 
-2. **spaCy NER** (Python only) — Named entity recognition for names, organizations, and locations (PERSON, ORG, GPE). The JS SDK does not include spaCy; instead, these categories are handled by the optional Ollama LLM pass.
+2. **Ollama LLM** (opt-in, both SDKs) — Local LLM-based semantic detection for contextual PII: addresses, dates of birth, medical terms, financial data, and any category you define yourself via `custom_llm_categories`. Data never leaves your machine.
 
-3. **Ollama LLM** (opt-in, both SDKs) — Local LLM-based semantic detection for contextual PII: addresses, dates of birth, medical terms, financial data, and more. Data never leaves your machine.
+3. **NER** (both SDKs) — Named entity recognition for names, organizations and locations (PERSON, ORG, GPE). Python uses **spaCy**, installed with `pip install cloakllm[detection]`. JavaScript uses **compromise**, installed with `npm install compromise`. Both are optional: without them, detection degrades to regex-only and warns once rather than failing.
+
+#### Order is precedence (changed in v0.12.6)
+
+**Whichever pass claims a span keeps it**, so the order above is not just a sequence — it decides which category a value ends up labelled with.
+
+Regex runs first because it is structural and the most certain. The LLM pass runs **before** NER because a category you configured explicitly is a stronger statement of intent than a probabilistic name guess. NER is the fuzziest pass, so it goes last.
+
+Before v0.12.6 the order was regex → NER → LLM, which meant NER could take a span out from under a category you had defined:
+
+```python
+shield = Shield(ShieldConfig(
+    llm_detection=True,
+    custom_llm_categories=[("PATIENT_ID", "Hospital patient ID")],
+))
+shield.sanitize("Patient John Smith-99 was admitted")
+# v0.12.5 and earlier:  "Patient [PERSON_0] was admitted"     <- wrong category
+# v0.12.6 and later:    "Patient [PATIENT_ID_0] was admitted"
+```
+
+No PII leaked either way — the value is tokenized in both cases — but the category was wrong, which corrupts `entity_details` and anything downstream keyed on it.
+
+The two passes do not compete for the same categories: when NER is available, the LLM pass is told to skip PERSON/ORG/GPE, so it cannot claim them by running first. When NER is unavailable, the LLM keeps those categories, which is the only way they get detected at all.
 
 ### Tokenization
 
@@ -1652,7 +1674,7 @@ Both SDKs enforce these rules at config creation time.
 
 ## Pluggable Detection Backends
 
-v0.5.2 introduces a `DetectorBackend` base class that lets you replace or extend the default detection pipeline. The built-in pipeline runs regex → NER → LLM (opt-in). With pluggable backends, you can swap any stage, add custom detectors, or build an entirely custom pipeline.
+v0.5.2 introduces a `DetectorBackend` base class that lets you replace or extend the default detection pipeline. The built-in pipeline runs regex → LLM (opt-in) → NER. Order is precedence: whichever pass claims a span keeps it (see [Default 3-Pass Detection](#default-3-pass-detection)). With pluggable backends, you can swap any stage, add custom detectors, or build an entirely custom pipeline.
 
 ### Writing a Custom Backend
 
@@ -1748,7 +1770,7 @@ Both SDKs export three built-in backend classes:
 | `NerBackend` | `"ner"` | Named entity recognition (spaCy in Python, compromise in JS) |
 | `LlmBackend` | `"llm"` | Ollama-based semantic detection for contextual PII |
 
-When no `backends` parameter is provided, Shield builds the default pipeline automatically (regex → NER → LLM if enabled).
+When no `backends` parameter is provided, Shield builds the default pipeline automatically (regex → LLM if enabled → NER).
 
 ### Dynamic Metrics
 
