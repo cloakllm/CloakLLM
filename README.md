@@ -33,6 +33,8 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 | [CloakLLM-MCP](https://github.com/cloakllm/cloakllm-mcp) | 0.12.6 | `python -m mcp run server.py` | [MCP README](https://github.com/cloakllm/cloakllm-mcp#readme) |
 | [cloakllm-verifier](https://github.com/cloakllm/cloakllm-verifier) | 0.12.0 | `pip install cloakllm-verifier` / `npm install cloakllm-verifier` | [Verifier README](https://github.com/cloakllm/cloakllm-verifier#readme) |
 
+**Not a developer?** [CloakLLM Guard](https://cloakllm.dev/guard) is a Chrome extension that warns you before you send personal data to ChatGPT, Claude, Gemini or Copilot. It checks on your device and never sends or stores what you type. [Chrome Web Store](https://chromewebstore.google.com/detail/cloakllm-guard/pecgdpfhaaegckfacpplghfeojbdnkoa) - [source](https://github.com/cloakllm/cloakllm-guard).
+
 ## What it does
 
 - **PII Detection** — emails, SSNs, credit cards, phone numbers, API keys, and more

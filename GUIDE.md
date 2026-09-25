@@ -45,6 +45,7 @@ PII protection middleware for LLMs — detect, tokenize, and audit before prompt
 - [Externally-Verifiable Key Provenance](#externally-verifiable-key-provenance-v081) **(v0.8.1+)**
 - [Trusted Timestamping](#trusted-timestamping-v0110) **(v0.11.0)**
 - [Enterprise Key Management](#enterprise-key-management)
+- [Browser Extension (CloakLLM Guard)](#browser-extension-cloakllm-guard)
 - [Disabling / Re-enabling](#disabling--re-enabling)
 
 ---
@@ -2391,6 +2392,25 @@ class MyHSMProvider(KeyProvider):
 ```
 
 Then pass an instance via `ShieldConfig(attestation_key=provider)`.
+
+---
+
+## Browser Extension (CloakLLM Guard)
+
+Everything above protects what an **application** sends to an LLM. CloakLLM Guard covers the other path: a **person** pasting into an AI chat in their browser.
+
+It is a Chrome extension for ChatGPT, Claude, Gemini and Microsoft Copilot. When you press send, it checks the message on your device and, if it finds personal data, says what kind and asks: edit the message, or send anyway. Sending is always one click away. It is a seatbelt, not a lock.
+
+- **Install:** [Chrome Web Store](https://chromewebstore.google.com/detail/cloakllm-guard/pecgdpfhaaegckfacpplghfeojbdnkoa) - no account, no configuration.
+- **Sites:** `chatgpt.com`, `chat.openai.com`, `claude.ai`, `gemini.google.com`, `copilot.microsoft.com`, `m365.cloud.microsoft`.
+- **Warns about:** credit card numbers, IBANs, US Social Security numbers, API keys, AWS access keys, access tokens (JWT), email addresses and phone numbers. IP addresses too, off by default. Every category can be switched off.
+- **Same engine as the SDK:** the regex detection is built from the `cloakllm` JavaScript SDK at build time, so the Luhn gate on card numbers, the phone rules and the ReDoS guard are the same code, not a copy.
+- **Never:** makes a network request (it contains no network code: no server, no analytics), stores what you typed (the log holds categories and counts, never values), or reports to anyone.
+- **Your record:** the toolbar popup shows near-misses caught and how often the warning was heeded. The log exports as a hash-chained file that [`cloakllm-verifier`](https://github.com/cloakllm/cloakllm-verifier) can check.
+
+**What it cannot see:** desktop chat apps, assistants inside a code editor, anything sent from code or the command line, and anything on another device. It does not detect names, postal addresses or dates of birth. For application traffic, use the SDK; the two cover different paths and neither replaces the other.
+
+More: [cloakllm.dev/guard](https://cloakllm.dev/guard) - [support](https://cloakllm.dev/guard/support) - [privacy policy](https://cloakllm.dev/guard/privacy) - [source](https://github.com/cloakllm/cloakllm-guard).
 
 ---
 
