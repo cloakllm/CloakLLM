@@ -47,7 +47,7 @@ Open-source PII protection middleware for LLMs. Detect sensitive data, replace i
 - **Performance Metrics** — per-pass timing breakdowns (regex, NER, LLM) in audit logs and via `shield.metrics()` API
 - **Incremental Streaming** — `StreamDesanitizer` state machine replaces tokens as chunks arrive, no full buffering
 - **Cryptographic Attestation** — Ed25519-signed sanitization certificates with Merkle tree batch proofs and replay-resistant nonces
-- **Multi-Language PII Detection** — 13 locales (DE, FR, ES, IT, PT, NL, PL, SE, NO, DK, FI, GB, AU) with locale-specific patterns
+- **Multi-Language PII Detection** — 13 locales (DE, FR, ES, NL, IT, PL, PT, HE, RU, ZH, JA, KO, HI) with locale-specific patterns. See the GUIDE for exactly what each one detects
 - **Context Risk Analysis** — `ContextAnalyzer` scores re-identification risk in sanitized text (token density, identifying descriptors, relationship edges)
 - **Normalized Token Standard** — formal spec ([TOKEN_SPEC.md](TOKEN_SPEC.md)) with validation utilities (`validateToken`, `parseToken`), canonical regex, and built-in category registry
 - **Pluggable Detection Backends** — `DetectorBackend` base class for custom detection pipelines; swap or extend the default regex→LLM→NER pipeline with your own backends

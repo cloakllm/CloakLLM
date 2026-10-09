@@ -1000,36 +1000,40 @@ Pass `custom_llm_categories` as a JSON string of `[name, description]` pairs:
 
 ## Multi-Language Detection
 
-CloakLLM supports locale-specific PII detection for 13 non-US locales. Setting a locale activates country-specific regex patterns for SSNs, phone numbers, IBANs, tax IDs, and national IDs. In Python, it also auto-selects the appropriate spaCy NER model for that language.
+Setting a `locale` adds country-specific regex patterns on top of the built-in ones (email, card numbers, IBAN, API keys, US SSN and phone formats keep working). In Python it also switches the spaCy name-detection model to that language. There are **13 locales**. The table lists exactly what each one adds; anything not listed is not detected by that locale.
 
 ### Supported Locales
 
-| Locale | Country | Example Patterns |
-|--------|---------|-----------------|
-| `de` | Germany | Steuer-IdNr, Personalausweis, DE phone, DE IBAN |
-| `fr` | France | NIR (INSEE), carte d'identite, FR phone, FR IBAN |
-| `es` | Spain | DNI/NIE, ES phone, ES IBAN |
-| `it` | Italy | Codice Fiscale, IT phone, IT IBAN |
-| `pt` | Portugal | NIF, PT phone, PT IBAN |
-| `nl` | Netherlands | BSN, NL phone, NL IBAN |
-| `pl` | Poland | PESEL, NIP, PL phone, PL IBAN |
-| `se` | Sweden | Personnummer, SE phone, SE IBAN |
-| `no` | Norway | Fodselsnummer, NO phone, NO IBAN |
-| `dk` | Denmark | CPR-nummer, DK phone, DK IBAN |
-| `fi` | Finland | Henkilotunnus, FI phone, FI IBAN |
-| `gb` | United Kingdom | NINO, GB phone, GB IBAN |
-| `au` | Australia | TFN, AU phone |
+| Locale | Country / language | Adds detection for | spaCy model (Python) |
+|--------|--------------------|--------------------|----------------------|
+| `de` | Germany | Mobile and landline phone numbers, VAT ID (USt-IdNr) | `de_core_news_sm` |
+| `fr` | France | Phone numbers, social security number (NIR) | `fr_core_news_sm` |
+| `es` | Spain | Phone numbers, DNI, NIE | `es_core_news_sm` |
+| `nl` | Netherlands | Phone numbers, BSN, postal codes | `nl_core_news_sm` |
+| `it` | Italy | Mobile and landline phone numbers, Codice Fiscale | `it_core_news_sm` |
+| `pl` | Poland | Phone numbers, PESEL, NIP | `pl_core_news_sm` |
+| `pt` | Portuguese (Portugal and Brazil) | Portuguese and Brazilian phone numbers, Brazilian CPF | `pt_core_news_sm` |
+| `he` | Israel (Hebrew) | Mobile and landline phone numbers | none: regex only, or the optional local LLM pass |
+| `ru` | Russia | Mobile and landline phone numbers, SNILS, INN | `ru_core_news_sm` |
+| `zh` | China | Phone numbers, national ID (18 digits) | `zh_core_web_sm` |
+| `ja` | Japan | Mobile and landline phone numbers, My Number | `ja_core_news_sm` |
+| `ko` | South Korea | Mobile and landline phone numbers, resident registration number (RRN) | `ko_core_news_sm` |
+| `hi` | India (Hindi) | Phone numbers, PAN, Aadhaar | none: regex only, or the optional local LLM pass |
+
+`multi` selects the multilingual spaCy model `xx_ent_wiki_sm` for name detection, without adding country patterns.
+
+**Not covered, so do not rely on a locale for these:** German tax ID (Steuer-IdNr) and ID card numbers, Israeli ID numbers (Teudat Zehut), Portuguese NIF, and any country not in the table. There is **no** locale for the UK, Ireland, the Nordic countries or Australia. Use `custom_patterns` for identifiers you need that are not listed.
 
 ### Python
 
 ```python
 from cloakllm import Shield, ShieldConfig
 
-# German locale — activates DE-specific patterns and de_core_news_sm spaCy model
+# German locale: adds DE patterns and switches name detection to de_core_news_sm
 shield = Shield(ShieldConfig(locale="de"))
 
-sanitized, token_map = shield.sanitize("Steuer-IdNr: 12345678901, Tel: +49 30 1234567")
-# → "Steuer-IdNr: [SSN_0], Tel: [PHONE_0]"
+sanitized, token_map = shield.sanitize("USt-IdNr: DE123456789, Mobil: 0151 23456789, Festnetz: 030 1234567")
+# -> "USt-IdNr: [VAT_DE_0], Mobil: [PHONE_DE_0], Festnetz: [PHONE_DE_LAND_0]"
 ```
 
 ### JavaScript
@@ -1037,19 +1041,20 @@ sanitized, token_map = shield.sanitize("Steuer-IdNr: 12345678901, Tel: +49 30 12
 ```javascript
 const { Shield, ShieldConfig } = require('cloakllm');
 
-// German locale — activates DE-specific patterns
+// German locale: adds DE patterns (JS name detection is English-only)
 const shield = new Shield(new ShieldConfig({ locale: 'de' }));
 
-const [sanitized, tokenMap] = shield.sanitize('Steuer-IdNr: 12345678901, Tel: +49 30 1234567');
-// → "Steuer-IdNr: [SSN_0], Tel: [PHONE_0]"
+const [sanitized, tokenMap] = shield.sanitize('USt-IdNr: DE123456789, Mobil: 0151 23456789, Festnetz: 030 1234567');
+// -> "USt-IdNr: [VAT_DE_0], Mobil: [PHONE_DE_0], Festnetz: [PHONE_DE_LAND_0]"
 ```
 
 ### Key Behaviors
 
-- **spaCy model auto-selection** (Python only): Each locale maps to the appropriate spaCy language model (e.g., `de` uses `de_core_news_sm`, `fr` uses `fr_core_news_sm`). Install the model with `python -m spacy download <model_name>`.
-- **Pattern replacement**: Locale-specific patterns replace the default US-centric patterns for SSN, phone, and similar categories.
-- **Composable**: Locale patterns work alongside custom patterns, LLM detection, and entity hashing.
-- **Default**: When no locale is set (empty string), US patterns are used.
+- **Added, not replaced:** locale patterns run before the built-in patterns. Everything the default configuration detects is still detected.
+- **spaCy model auto-selection (Python only):** each locale switches to its language model, as in the table. Install it with `python -m spacy download <model_name>`. If you set `spacy_model` to anything other than the English default, your choice is kept. In JavaScript, name detection (compromise) is English-only whatever the locale.
+- **Decimal numbers are safe (v0.12.7+):** a match that is part of a decimal number, such as a price or a measurement, is not treated as personal data under any locale.
+- **Composable:** locale patterns work alongside `custom_patterns`, the LLM pass and entity hashing.
+- **Default:** `locale="en"`, which adds no country patterns.
 
 ---
 
